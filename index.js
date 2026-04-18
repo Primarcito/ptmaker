@@ -4,7 +4,7 @@ const {
   SlashCommandBuilder, EmbedBuilder,
   ButtonBuilder, ButtonStyle, ActionRowBuilder,
   StringSelectMenuBuilder, ModalBuilder,
-  TextInputBuilder, TextInputStyle,
+  TextInputBuilder, TextInputStyle, ChannelType,
 } = require("discord.js");
 const fs = require("fs");
 const fsPromises = require("fs").promises;
@@ -63,27 +63,41 @@ const ALLOWED_CHANNELS = process.env.ALLOWED_CHANNELS ? process.env.ALLOWED_CHAN
 //  PARSER
 // ════════════════════════════════════════════════════════════
 function parseComposition(input) {
-  const slots = { tank: 0, healer: 0, dps: 0, support: 0 };
-  const builds = { tank: [], healer: [], dps: [], support: [] };
-  if (!input) return { slots, builds };
+  const slots = { tank: 0, healer: 0, dps: 0, support: 0, mount: 0 };
+  const builds = { tank: [], healer: [], dps: [], support: [], mount: [] };
+  const partyAssignments = { tank: [], healer: [], dps: [], support: [], mount: [] };
+  if (!input) return { slots, builds, partyAssignments };
 
   let cur = null;
+  let currentParty = 1;
   for (const line of input.split("\n").map(l => l.trim()).filter(Boolean)) {
     const lo = line.toLowerCase();
+    
+    const partyMatch = lo.match(/^(pt|party)\s*(\d+)$/i);
+    if (partyMatch) {
+         currentParty = parseInt(partyMatch[2], 10);
+         continue;
+    }
+
     let isHeader = false;
     if (lo.startsWith("tank") || lo === "tanque") { cur = "tank"; isHeader = true; }
     else if (lo.startsWith("heal")) { cur = "healer"; isHeader = true; }
     else if (lo.startsWith("dps") || lo.startsWith("dam")) { cur = "dps"; isHeader = true; }
     else if (lo.startsWith("sup") || lo.startsWith("sor")) { cur = "support"; isHeader = true; }
+    else if (lo.startsWith("mon") || lo.startsWith("mou")) { cur = "mount"; isHeader = true; }
 
     if (isHeader) { if (slots[cur] === 0) slots[cur] = 1; continue; }
     if (cur) {
-      if (slots[cur] === 1 && builds[cur].length === 0) slots[cur] = 0;
+      if (slots[cur] === 1 && builds[cur].length === 0) {
+          slots[cur] = 0;
+          partyAssignments[cur] = [];
+      }
       builds[cur].push(line);
+      partyAssignments[cur].push(currentParty);
       slots[cur]++;
     }
   }
-  return { slots, builds };
+  return { slots, builds, partyAssignments };
 }
 
 // ════════════════════════════════════════════════════════════
@@ -112,25 +126,124 @@ function buildCompoEmbed(compo) {
 
   let rosterDesc = "";
 
-  for (const { key, emoji, label } of [
-    { key: "tank", emoji: "🛡️", label: "Tank" },
-    { key: "healer", emoji: "🌿", label: "Healer" },
-    { key: "dps", emoji: "⚔️", label: "DPS" },
-    { key: "support", emoji: "🔮", label: "Support" },
-  ]) {
-    const max = slots[key] || 0;
-    if (max === 0) continue;
-    const arr = signups[key] || [];
-    const roleBuilds = builds?.[key] || [];
-    let filled = 0;
-    const lines = [];
-    for (let i = 0; i < max; i++) {
-      const u = arr[i];
-      if (u) filled++;
-      const buildText = u && u.build ? u.build : roleBuilds[i];
-      lines.push(`${u ? `✅ **<@${u.userId}>**` : "⬜ *vacío*"}${buildText ? ` · *${buildText}*` : ""}`);
+  const rolesConfig = [
+    { key: "tank", emoji: "🛡️", color: "🔵", label: "Tanks" },
+    { key: "healer", emoji: "🌿", color: "🟢", label: "Healers" },
+    { key: "dps", emoji: "⚔️", color: "🔴", label: "DPS" },
+    { key: "support", emoji: "🔮", color: "🟡", label: "Support" },
+    { key: "mount", emoji: "🐎", color: "🟤", label: "Monturas" }
+  ];
+
+  if (tLoStr.includes("zvz")) {
+    const hasAssignments = compo.partyAssignments && Object.values(compo.partyAssignments).some(arr => arr && arr.length > 0);
+
+    if (hasAssignments) {
+        let parties = {}; 
+        for (const { key, emoji, color, label } of rolesConfig) {
+          const max = slots[key] || 0;
+          if (max === 0) continue;
+          const arr = signups[key] || [];
+          const roleBuilds = builds?.[key] || [];
+          const roleParties = compo.partyAssignments[key] || [];
+
+          const partyGroups = {};
+          for (let i = 0; i < max; i++) {
+             const pt = roleParties[i] || 1;
+             if (!partyGroups[pt]) partyGroups[pt] = [];
+             partyGroups[pt].push(i);
+          }
+
+          for (const [ptStr, indices] of Object.entries(partyGroups)) {
+             const pt = parseInt(ptStr, 10);
+             if (!parties[pt]) parties[pt] = { players: [], filled: 0, total: 0 };
+             
+             for (const i of indices) {
+                 const u = arr[i];
+                 const buildText = u && u.build ? u.build : roleBuilds[i];
+                 if (u) {
+                     parties[pt].players.push(`${color} ✅ <@${u.userId}> · *${buildText || label}*`);
+                     parties[pt].filled++;
+                 } else {
+                     parties[pt].players.push(`${color} ⬜ *vacío* · *${buildText || label}*`);
+                 }
+                 parties[pt].total++;
+             }
+          }
+        }
+        
+        const ptKeys = Object.keys(parties).map(Number).sort((a,b) => a-b);
+        for (const pt of ptKeys) {
+            const pObj = parties[pt];
+            const pName = pt === 1 ? "Main Zerg" : (pt === 2 ? "Flanco / Bombsquad" : `Escuadrón ${pt}`);
+            rosterDesc += `### ⚔️ PARTY ${pt} (${pName}) [${pObj.filled}/${pObj.total}]\n${pObj.players.join("\n")}\n\n`;
+        }
+    } else {
+        let parties = [];
+        let currentPartyIdx = 0;
+
+        for (const { key, emoji, color, label } of rolesConfig) {
+          const max = slots[key] || 0;
+          if (max === 0) continue;
+
+          const arr = signups[key] || [];
+          const roleBuilds = builds?.[key] || [];
+
+          const renderPlayer = (i) => {
+            const u = arr[i];
+            const buildText = u && u.build ? u.build : roleBuilds[i];
+            return `${color} ${u ? `✅ <@${u.userId}>` : "⬜ *vacío*"} · *${buildText || label}*`;
+          };
+
+          let roleSlotsAllocated = 0;
+          while (roleSlotsAllocated < max) {
+             let party = parties[currentPartyIdx];
+             if (!party) {
+                party = { currentSlots: 0, blocks: [], filled: 0 };
+                parties.push(party);
+             }
+             
+             const availableInParty = 20 - party.currentSlots;
+             if (availableInParty <= 0) {
+                currentPartyIdx++;
+                continue;
+             }
+             
+             const slotsToAllocate = Math.min(availableInParty, max - roleSlotsAllocated);
+             
+             for (let i = roleSlotsAllocated; i < roleSlotsAllocated + slotsToAllocate; i++) {
+                 party.blocks.push(renderPlayer(i));
+                 if (arr[i]) party.filled++;
+             }
+             
+             party.currentSlots += slotsToAllocate;
+             roleSlotsAllocated += slotsToAllocate;
+          }
+        }
+
+        parties.forEach((p, idx) => {
+           if (p.currentSlots > 0) {
+               const pName = idx === 0 ? "Main Zerg" : (idx === 1 ? "Flanco / Bombsquad" : `Escuadrón ${idx+1}`);
+               rosterDesc += `### ⚔️ PARTY ${idx + 1} (${pName}) [${p.filled}/${p.currentSlots}]\n${p.blocks.join("\n")}\n\n`;
+           }
+        });
     }
-    rosterDesc += `\n**${emoji} ${label} (${filled}/${max})**\n${lines.join("\n")}\n`;
+  } else {
+    for (const { key, emoji, label } of rolesConfig) {
+      const max = slots[key] || 0;
+      if (max === 0) continue;
+      const arr = signups[key] || [];
+      const roleBuilds = builds?.[key] || [];
+      let filled = 0;
+      const lines = [];
+      for (let i = 0; i < max; i++) {
+        const u = arr[i];
+        if (u) filled++;
+        const buildText = u && u.build ? u.build : roleBuilds[i];
+        lines.push(`${u ? `✅ **<@${u.userId}>**` : "⬜ *vacío*"}${buildText ? ` · *${buildText}*` : ""}`);
+      }
+      const singularLabel = label.endsWith('s') ? label.slice(0, -1) : label;
+      rosterDesc += `\n**${emoji} ${singularLabel} (${filled}/${max})**\n${lines.join("\n")}\n`;
+    }
   }
 
   embed.setDescription(rosterDesc || "No hay roles definidos.");
@@ -150,6 +263,7 @@ function buildCompoButtons(compo) {
   if ((slots.healer ?? 0) > 0) btns.push(new ButtonBuilder().setCustomId("signup_heal").setLabel(`🌿 Healer (${filled("healer")}/${slots.healer})`).setStyle(ButtonStyle.Primary).setDisabled(full("healer")));
   if ((slots.dps ?? 0) > 0) btns.push(new ButtonBuilder().setCustomId("signup_dps").setLabel(`⚔️ DPS (${filled("dps")}/${slots.dps})`).setStyle(ButtonStyle.Primary).setDisabled(full("dps")));
   if ((slots.support ?? 0) > 0) btns.push(new ButtonBuilder().setCustomId("signup_sup").setLabel(`🔮 Support (${filled("support")}/${slots.support})`).setStyle(ButtonStyle.Primary).setDisabled(full("support")));
+  if ((slots.mount ?? 0) > 0) btns.push(new ButtonBuilder().setCustomId("signup_mount").setLabel(`🐎 Montura (${filled("mount")}/${slots.mount})`).setStyle(ButtonStyle.Primary).setDisabled(full("mount")));
   btns.push(new ButtonBuilder().setCustomId("signup_out").setLabel("✗ Desanotarme").setStyle(ButtonStyle.Danger));
 
   const rows = [];
@@ -203,10 +317,28 @@ client.once("clientReady", async () => {
     new SlashCommandBuilder()
       .setName("pt-moveall")
       .setDescription("Mueve a inscritos a un canal de voz")
-      .addChannelOption(o => o.setName("canal").setDescription("Canal de voz destino").setRequired(true)),
+      .addChannelOption(o => o.setName("canal").setDescription("Canal de voz destino").setRequired(true).addChannelTypes(ChannelType.GuildVoice)),
     new SlashCommandBuilder()
       .setName("pt-ping")
       .setDescription("Etiqueta a todos los inscritos de la compo"),
+    new SlashCommandBuilder()
+      .setName("pt-kick")
+      .setDescription("Expulsa a un usuario de la composición")
+      .addUserOption(o => o.setName("usuario").setDescription("Usuario a expulsar").setRequired(true)),
+    new SlashCommandBuilder()
+      .setName("pt-setrol")
+      .setDescription("Mueve a un usuario a otro rol en la composición")
+      .addUserOption(o => o.setName("usuario").setDescription("Usuario a mover").setRequired(true))
+      .addStringOption(o => o.setName("rol")
+        .setDescription("Nuevo rol destino")
+        .setRequired(true)
+        .addChoices(
+          { name: "🛡️ Tank", value: "tank" },
+          { name: "🌿 Healer", value: "healer" },
+          { name: "⚔️ DPS", value: "dps" },
+          { name: "🔮 Support", value: "support" },
+          { name: "🐎 Montura", value: "mount" }
+        )),
   ];
   const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
   // Registrar como Comandos Globales
@@ -288,13 +420,14 @@ async function handle(interaction) {
 
       const compoData = {
         nombre: t.nombre, tipo: t.tipo,
-        slots: { ...t.slots }, builds: { ...t.builds },
+        slots: { ...t.slots }, builds: { ...t.builds }, partyAssignments: t.partyAssignments ? { ...t.partyAssignments } : null,
         estrategia: t.estrategia,
         signups: {
           tank: Array(t.slots.tank || 0).fill(null),
           healer: Array(t.slots.healer || 0).fill(null),
           dps: Array(t.slots.dps || 0).fill(null),
           support: Array(t.slots.support || 0).fill(null),
+          mount: Array(t.slots.mount || 0).fill(null),
         },
         authorId: interaction.user.id, authorTag: interaction.user.username,
         createdAt: Date.now(),
@@ -382,6 +515,79 @@ async function handle(interaction) {
       return interaction.editReply(`✅ **Movidos:** ${moved} | 📴 **Desconectados o sin voz:** ${off} | ⚠️ **Errores:** ${errs}`);
     }
 
+    // Helper de UI para comandos inline
+    async function syncCompoUI(c) {
+      if (c.threadMsgId) {
+        await updateParentEmbed(client, c);
+        try {
+          const thread = client.channels.cache.get(c.parentMsgId) || await client.channels.fetch(c.parentMsgId).catch(()=>null);
+          if (thread) {
+            const msg = await thread.messages.fetch(c.threadMsgId).catch(()=>null);
+            if (msg) await msg.edit({ components: buildCompoButtons(c) });
+          }
+        } catch(e) {}
+      } else if (c.parentMsgId) {
+        try {
+          const ch = client.channels.cache.get(c.channelId) || await client.channels.fetch(c.channelId).catch(()=>null);
+          if (ch) {
+            const msg = await ch.messages.fetch(c.parentMsgId).catch(()=>null);
+            if (msg) await msg.edit({ embeds: [buildCompoEmbed(c)], components: buildCompoButtons(c) });
+          }
+        } catch(e) {}
+      }
+    }
+
+    // /pt-kick
+    if (interaction.commandName === "pt-kick") {
+      const c = resolveTargetCompo();
+      if (!c) return interaction.reply({ content: "❌ Composición no encontrada. Úsalo dentro del hilo de una compo activa.", ephemeral: true });
+      if (c.authorId !== interaction.user.id && !hasAdmin) return interaction.reply({ content: "❌ Solo el creador de la party o administradores.", ephemeral: true });
+      
+      const targetUser = interaction.options.getUser("usuario");
+      let removed = false;
+      for (const roleKey of Object.keys(c.signups)) {
+        const arr = c.signups[roleKey];
+        const idx = arr.findIndex(s => s && s.userId === targetUser.id);
+        if (idx !== -1) { arr[idx] = null; removed = true; }
+      }
+      if (!removed) return interaction.reply({ content: `⚠️ ${targetUser.username} no está anotado.`, ephemeral: true });
+      
+      saveCompos();
+      await syncCompoUI(c);
+      return interaction.reply({ content: `👟 **${targetUser.username}** fue expulsado de la composición.`, ephemeral: false });
+    }
+
+    // /pt-setrol
+    if (interaction.commandName === "pt-setrol") {
+      const c = resolveTargetCompo();
+      if (!c) return interaction.reply({ content: "❌ Composición no encontrada. Úsalo dentro del hilo de una compo activa.", ephemeral: true });
+      if (c.authorId !== interaction.user.id && !hasAdmin) return interaction.reply({ content: "❌ Solo el creador de la party o administradores.", ephemeral: true });
+      
+      const targetUser = interaction.options.getUser("usuario");
+      const newRole = interaction.options.getString("rol");
+      
+      const emptyIdx = c.signups[newRole].findIndex(s => s === null);
+      if (emptyIdx === -1) return interaction.reply({ content: `❌ No hay espacios disponibles en **${newRole.toUpperCase()}**.`, ephemeral: true });
+
+      let userData = null;
+      for (const roleKey of Object.keys(c.signups)) {
+        const arr = c.signups[roleKey];
+        const idx = arr.findIndex(s => s && s.userId === targetUser.id);
+        if (idx !== -1) {
+          userData = { ...arr[idx] };
+          arr[idx] = null;
+        }
+      }
+      
+      if (!userData) return interaction.reply({ content: `⚠️ ${targetUser.username} no está anotado.`, ephemeral: true });
+      
+      c.signups[newRole][emptyIdx] = { userId: userData.userId, ign: userData.ign, build: userData.build };
+      saveCompos();
+      await syncCompoUI(c);
+      
+      return interaction.reply({ content: `🔄 **${targetUser.username}** fue movido a **${newRole.toUpperCase()}**.`, ephemeral: false });
+    }
+
     // /pt-dashboard
     if (interaction.commandName === "pt-dashboard") {
       if (!hasAdmin) return interaction.reply({ content: "❌ Sin permiso.", ephemeral: true });
@@ -418,12 +624,12 @@ async function handle(interaction) {
     if ((tLo.includes("pvp") || tLo.includes("pve")) && !interaction.member.roles.cache.has(PVPPVE_ROLE) && !hasAdmin)
       return interaction.reply({ content: "❌ Sin rol para crear PvP/PvE.", ephemeral: true });
 
-    const { slots, builds } = parseComposition(composRaw);
+    const { slots, builds, partyAssignments } = parseComposition(composRaw);
     if (Object.values(slots).reduce((a, b) => a + b, 0) === 0)
       return interaction.reply({ content: "❌ Formato inválido. Encabezados: `Tank`, `Healer`, `DPS`, `Support`.", ephemeral: true });
 
     templates[nombre] = {
-      nombre, tipo, slots, builds, estrategia,
+      nombre, tipo, slots, builds, partyAssignments, estrategia,
       rawComposicion: composRaw,
       authorId: interaction.user.id, authorTag: interaction.user.username,
       createdAt: Date.now(),
@@ -453,12 +659,12 @@ async function handle(interaction) {
     const tipo = interaction.fields.getTextInputValue("tipo").trim();
     const composRaw = interaction.fields.getTextInputValue("composicion").trim();
     const estrategia = interaction.fields.getTextInputValue("estrategia").trim();
-    const { slots, builds } = parseComposition(composRaw);
+    const { slots, builds, partyAssignments } = parseComposition(composRaw);
 
     if (Object.values(slots).reduce((a, b) => a + b, 0) === 0)
       return interaction.reply({ content: "❌ Formato inválido.", ephemeral: true });
     
-    templates[tName] = { ...(templates[tName] || {}), tipo, slots, builds, estrategia, rawComposicion: composRaw };
+    templates[tName] = { ...(templates[tName] || {}), tipo, slots, builds, partyAssignments, estrategia, rawComposicion: composRaw };
     saveTemplates();
     return interaction.update({ content: `✅ **${tName}** actualizada.`, embeds: [], components: [] });
   }
@@ -561,7 +767,7 @@ async function handle(interaction) {
   // ── BUTTONS: Anotarse / Desanotarse ──────────────────────
   if (interaction.isButton()) {
     const { customId, message, user } = interaction;
-    const VALID = ["signup_tank", "signup_heal", "signup_dps", "signup_sup", "signup_out"];
+    const VALID = ["signup_tank", "signup_heal", "signup_dps", "signup_sup", "signup_mount", "signup_out"];
     if (!VALID.includes(customId)) return;
 
     const compo = compos[message.id];
@@ -589,7 +795,7 @@ async function handle(interaction) {
     }
 
     // Anotarse
-    const roleMap = { signup_tank: "tank", signup_heal: "healer", signup_dps: "dps", signup_sup: "support" };
+    const roleMap = { signup_tank: "tank", signup_heal: "healer", signup_dps: "dps", signup_sup: "support", signup_mount: "mount" };
     const role = roleMap[customId];
 
     const availableIdxs = compo.signups[role].reduce((acc, s, i) => {
