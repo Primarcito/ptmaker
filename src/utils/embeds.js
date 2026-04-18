@@ -8,8 +8,8 @@ const GREEN  = 0x57C457;
 //  PT embed (perfil del jugador)
 // ─────────────────────────────────────────────────────────────────
 function buildPTEmbed(pt, user) {
-  const rolEmoji = { tank: "🛡", healer: "💚", dps: "⚔", support: "✨" };
-  const emoji = rolEmoji[pt.rol?.toLowerCase()] ?? "⚔";
+  const rolEmoji = { tank: "🛡️", healer: "🚑", dps: "🔥", support: "✨" };
+  const emoji = rolEmoji[pt.rol?.toLowerCase()] ?? "⚔️";
 
   return new EmbedBuilder()
     .setColor(GOLD)
@@ -35,7 +35,7 @@ function buildCompoEmbed(compo) {
   const { nombre, tipo, estrategia, slots, builds, signups, authorTag } = compo;
 
   const totalSlots  = Object.values(slots).reduce((a, b) => a + b, 0);
-  const totalFilled = Object.values(signups).reduce((a, arr) => a + arr.length, 0);
+  const totalFilled = Object.values(signups).reduce((acc, arr) => acc + arr.filter(s => s !== null).length, 0);
   const isFull      = totalFilled >= totalSlots;
 
   const color = isFull ? GREEN : RED;
@@ -49,9 +49,9 @@ function buildCompoEmbed(compo) {
 
   // Campos por rol
   const roleConfig = [
-    { key: "tank",    emoji: "🛡", label: "Tank"    },
-    { key: "healer",  emoji: "💚", label: "Healer"  },
-    { key: "dps",     emoji: "⚔",  label: "DPS"     },
+    { key: "tank",    emoji: "🛡️", label: "Tank"    },
+    { key: "healer",  emoji: "🚑", label: "Healer"  },
+    { key: "dps",     emoji: "🔥", label: "DPS"     },
     { key: "support", emoji: "✨", label: "Support" },
   ];
 
@@ -59,18 +59,21 @@ function buildCompoEmbed(compo) {
     const max = slots[key] || 0;
     if (max === 0) continue;
 
-    const filled   = signups[key] || [];
+    const arrFixed   = signups[key] || [];
     const roleBuilds = builds?.[key] || [];
-    const lines    = [];
+    const lines      = [];
+    let filledCount  = 0;
 
     for (let i = 0; i < max; i++) {
-      const userStr = filled[i] ? `✅ **${filled[i].ign}**` : "⬜ *vacío*";
+      const userObj = arrFixed[i];
+      if (userObj) filledCount++;
+      const userStr = userObj ? `✅ **${userObj.ign}**` : "⬜ *vacío*";
       const buildStr = roleBuilds[i] ? ` · *${roleBuilds[i]}*` : "";
       lines.push(`${userStr}${buildStr}`);
     }
 
     embed.addFields({
-      name:   `${emoji} ${label} (${filled.length}/${max})`,
+      name:   `${emoji} ${label} (${filledCount}/${max})`,
       value:  lines.join("\n"),
       inline: true,
     });
@@ -91,7 +94,8 @@ function buildCompoEmbed(compo) {
 function buildCompoButtons(compo) {
   const { slots, signups } = compo;
 
-  const isFull = (role) => (signups[role]?.length ?? 0) >= (slots[role] ?? 0);
+  const countFilled = (role) => (signups[role] || []).filter(s => s !== null).length;
+  const isFull = (role) => countFilled(role) >= (slots[role] ?? 0);
 
   const buttons = [];
 
@@ -99,7 +103,7 @@ function buildCompoButtons(compo) {
     buttons.push(
       new ButtonBuilder()
         .setCustomId("signup_tank")
-        .setLabel(`🛡 Tank (${signups.tank.length}/${slots.tank})`)
+        .setLabel(`🛡️ Tank (${countFilled("tank")}/${slots.tank})`)
         .setStyle(ButtonStyle.Primary)
         .setDisabled(isFull("tank"))
     );
@@ -109,7 +113,7 @@ function buildCompoButtons(compo) {
     buttons.push(
       new ButtonBuilder()
         .setCustomId("signup_heal")
-        .setLabel(`💚 Healer (${signups.healer.length}/${slots.healer})`)
+        .setLabel(`🚑 Healer (${countFilled("healer")}/${slots.healer})`)
         .setStyle(ButtonStyle.Primary)
         .setDisabled(isFull("healer"))
     );
@@ -119,7 +123,7 @@ function buildCompoButtons(compo) {
     buttons.push(
       new ButtonBuilder()
         .setCustomId("signup_dps")
-        .setLabel(`⚔ DPS (${signups.dps.length}/${slots.dps})`)
+        .setLabel(`🔥 DPS (${countFilled("dps")}/${slots.dps})`)
         .setStyle(ButtonStyle.Primary)
         .setDisabled(isFull("dps"))
     );
@@ -129,7 +133,7 @@ function buildCompoButtons(compo) {
     buttons.push(
       new ButtonBuilder()
         .setCustomId("signup_sup")
-        .setLabel(`✨ Support (${signups.support.length}/${slots.support})`)
+        .setLabel(`✨ Support (${countFilled("support")}/${slots.support})`)
         .setStyle(ButtonStyle.Primary)
         .setDisabled(isFull("support"))
     );

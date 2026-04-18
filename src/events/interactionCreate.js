@@ -2,6 +2,7 @@ const TemplateStore = require("../utils/templateStore");
 const CompoStore = require("../utils/compoStore");
 const { buildCompoEmbed, buildCompoButtons } = require("../utils/embeds");
 const { parseComposition } = require("../utils/parsers");
+const { StringSelectMenuBuilder, ActionRowBuilder } = require("discord.js");
 
 module.exports = {
   name: "interactionCreate",
@@ -96,6 +97,44 @@ module.exports = {
       return;
     }
 
+    // ── String Select Menu (Elección de Arma/Asiento) ───────────
+    if (interaction.isStringSelectMenu() && interaction.customId.startsWith("selectslot_")) {
+      const parts = interaction.customId.split("_");
+      const msgId = parts[1];
+      const role = parts[2];
+      const selectedIndex = parseInt(interaction.values[0], 10);
+
+      const compo = CompoStore.get(msgId);
+      if (!compo) {
+        return interaction.update({ content: "❌ Composición expirada.", components: [] });
+      }
+
+      const signupsArr = compo.signups[role];
+      if (signupsArr[selectedIndex] !== null) {
+        return interaction.update({ content: "❌ Alguien más rápido tomó ese asiento. Intenta de nuevo.", components: [] });
+      }
+
+      // Auto-moverlo (limpiar historial en otro lado)
+      for (const list of Object.values(compo.signups)) {
+        const currentIdx = list.findIndex(s => s && s.userId === interaction.user.id);
+        if (currentIdx !== -1) {
+          list[currentIdx] = null;
+          break; // asume que solo puede estar en 1 lugar
+        }
+      }
+
+      signupsArr[selectedIndex] = { userId: interaction.user.id, ign: interaction.user.username };
+      CompoStore.save(msgId, compo);
+
+      const mainMessage = await interaction.channel.messages.fetch(msgId).catch(()=>null);
+      if (mainMessage) {
+        await mainMessage.edit({ embeds: [buildCompoEmbed(compo)], components: buildCompoButtons(compo) });
+      }
+      
+      await interaction.update({ content: "✅ Asiento asegurado.", components: [] });
+      return;
+    }
+
     // ── Buttons: anotarse / desanotarse ────────────────────────────
     if (interaction.isButton()) {
       const { customId, message, user } = interaction;
@@ -112,9 +151,9 @@ module.exports = {
       if (customId === "signup_out") {
         let removed = false;
         for (const role of Object.keys(compo.signups)) {
-          const idx = compo.signups[role].findIndex((s) => s.userId === user.id);
+          const idx = compo.signups[role].findIndex((s) => s && s.userId === user.id);
           if (idx !== -1) {
-            compo.signups[role].splice(idx, 1);
+            compo.signups[role][idx] = null;
             removed = true;
           }
         }
@@ -133,40 +172,69 @@ module.exports = {
       const roleMap = { signup_tank: "tank", signup_heal: "healer", signup_dps: "dps", signup_sup: "support" };
       const role = roleMap[customId];
 
-      // Verificar si ya está anotado en cualquier rol y moverlo automáticamente
+      // Verificamos de antemano si ESTÁ en este mismo rol en algún índice, sin importar cuál
+      const currentArr = compo.signups[role];
+      const isAlreadyInThisRole = currentArr.some(s => s && s.userId === user.id);
+      if (isAlreadyInThisRole) {
+         return interaction.reply({ content: "❌ Ya estás anotado en este rol.", ephemeral: true });
+      }
+
+      // Buscar slots vacíos
+      const signupsArr = compo.signups[role];
+      const roleBuilds = compo.builds?.[role] || [];
+      const freeIndexes = [];
+      for (let i = 0; i < compo.slots[role]; i++) {
+        if (!signupsArr[i]) freeIndexes.push(i);
+      }
+
+      if (freeIndexes.length === 0) {
+        return interaction.reply({ content: "❌ No hay slots disponibles para ese rol.", ephemeral: true });
+      }
+
+      // Despliegue del Menú Selector si hay builds especificas para escoger y más de 1 hueco
+      if (roleBuilds.length > 0 && freeIndexes.length > 1) {
+         const options = freeIndexes.map(idx => {
+            const buildName = roleBuilds[idx] || `Asiento ${idx + 1}`;
+            return {
+               label: buildName.slice(0, 100),
+               value: idx.toString(),
+               description: "Disponible",
+               emoji: "🎯"
+            };
+         });
+
+         const select = new StringSelectMenuBuilder()
+            .setCustomId(`selectslot_${message.id}_${role}`)
+            .setPlaceholder("Selecciona qué arma vas a usar")
+            .addOptions(options.slice(0, 25));
+
+         const row = new ActionRowBuilder().addComponents(select);
+         return interaction.reply({
+            content: "👇 **Hay múltiples especialidades libres para este Rol.**\nUsa el menú para reclamar exactamente la que puedes jugar:",
+            components: [row],
+            ephemeral: true
+         });
+      }
+
+      // Si no hay armas especificas, o si queda un único hueco, asignación lineal
       let wasMoved = false;
-      for (const [r, list] of Object.entries(compo.signups)) {
-        const idx = list.findIndex((s) => s.userId === user.id);
+      for (const list of Object.values(compo.signups)) {
+        const idx = list.findIndex(s => s && s.userId === user.id);
         if (idx !== -1) {
-          if (r === role) {
-            return interaction.reply({
-              content: "❌ Ya estás anotado en este rol.",
-              ephemeral: true,
-            });
-          }
-          list.splice(idx, 1);
+          list[idx] = null;
           wasMoved = true;
           break;
         }
       }
 
-      // Verificar slots disponibles
-      if ((compo.slots[role] || 0) === 0) {
-        return interaction.reply({ content: "❌ Este rol no existe en la compo.", ephemeral: true });
-      }
-      if (compo.signups[role].length >= compo.slots[role]) {
-        return interaction.reply({ content: "❌ No hay slots disponibles para ese rol.", ephemeral: true });
-      }
-
-      // Solo usar nombre de Discord ya que se eliminó el sistema estricto de PTs
+      const firstFree = freeIndexes[0];
       const ign = user.username;
-
-      compo.signups[role].push({ userId: user.id, ign });
+      
+      compo.signups[role][firstFree] = { userId: user.id, ign };
       CompoStore.save(message.id, compo);
 
       await interaction.update({ embeds: [buildCompoEmbed(compo)], components: buildCompoButtons(compo) });
-
-      const roleLabels = { tank: "🛡 Tank", healer: "💚 Healer", dps: "⚔ DPS", support: "✨ Support" };
+      const roleLabels = { tank: "🛡️ Tank", healer: "🚑 Healer", dps: "🔥 DPS", support: "✨ Support" };
       await interaction.followUp({
         content: `✅ Te has anotado como **${roleLabels[role]}** con el IGN **${ign}**.`,
         ephemeral: true,

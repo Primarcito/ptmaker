@@ -65,7 +65,12 @@ module.exports = {
       slots: template.slots,
       builds: template.builds,
       estrategia: template.estrategia,
-      signups: { tank: [], healer: [], dps: [], support: [] },
+      signups: { 
+        tank: Array(template.slots.tank || 0).fill(null),
+        healer: Array(template.slots.healer || 0).fill(null),
+        dps: Array(template.slots.dps || 0).fill(null),
+        support: Array(template.slots.support || 0).fill(null)
+      },
       authorId: interaction.user.id,
       authorTag: interaction.user.username,
       createdAt: Date.now(),
