@@ -262,38 +262,35 @@ module.exports = {
       const role = parts[2];
       const selectedIndex = parseInt(interaction.values[0], 10);
 
+      // Respuesta rápida para evitar el error rojo de Discord
+      await interaction.deferUpdate();
+
       const compo = CompoStore.get(msgId);
       if (!compo) {
-        return interaction.update({ content: "❌ Composición expirada.", components: [] });
+        return interaction.followUp({ content: "❌ Composición expirada.", ephemeral: true });
       }
 
+      const roleBuilds = compo.builds?.[role] || [];
       const signupsArr = compo.signups[role];
+
       if (signupsArr[selectedIndex] !== null) {
-        return interaction.update({ content: "❌ Alguien más rápido tomó ese asiento. Intenta de nuevo.", components: [] });
+        return interaction.followUp({ content: "❌ Alguien ocupó ese lugar hace un instante. Prueba otro.", ephemeral: true });
       }
 
-      // Auto-moverlo (limpiar historial en otro lado)
+      // Auto-moverlo
       for (const list of Object.values(compo.signups)) {
         const currentIdx = list.findIndex(s => s && s.userId === interaction.user.id);
         if (currentIdx !== -1) {
           list[currentIdx] = null;
-          break; // asume que solo puede estar en 1 lugar
         }
       }
 
       signupsArr[selectedIndex] = { userId: interaction.user.id, ign: interaction.user.username };
       CompoStore.save(msgId, compo);
 
-      // 1. Responder a la interacción del menú inmediatamente (ephemeral)
-      await interaction.update({ 
-        content: `✅ <@${interaction.user.id}>, has reclamado el asiento de **${roleBuilds[selectedIndex] || role}**.`, 
-        components: [] 
-      });
-
-      // 2. Intentar actualizar el mensaje principal (el cartel público)
+      // Actualizar el cartel principal
       try {
-        const channel = interaction.channel;
-        const mainMessage = await channel.messages.fetch(msgId);
+        const mainMessage = await interaction.channel.messages.fetch(msgId);
         if (mainMessage) {
           await mainMessage.edit({ 
             embeds: [buildCompoEmbed(compo)], 
@@ -301,13 +298,13 @@ module.exports = {
           });
         }
       } catch (e) {
-        console.error("Error crítico al editar cartel principal:", e);
-        // Informar al usuario si el cartel no se pudo actualizar
-        await interaction.followUp({ 
-          content: "⚠️ No pude actualizar el cartel principal (posible falta de permisos o mensaje borrado), pero tu asiendo quedó guardado internamente.", 
-          ephemeral: true 
-        }).catch(() => null);
+        console.error("Error editando cartel:", e);
       }
+      
+      await interaction.editReply({ 
+        content: `✅ <@${interaction.user.id}>, has reclamado el asiento de **${roleBuilds[selectedIndex] || role}** con éxito.`, 
+        components: [] 
+      });
       return;
     }
 
@@ -365,7 +362,6 @@ module.exports = {
           return interaction.reply({ content: "❌ No hay slots disponibles para ese rol.", ephemeral: true });
         }
 
-        // Armas especificas?
         const roleBuilds = compo.builds?.[role] || [];
         if (roleBuilds.length > 0 && freeIndexes.length > 1) {
           const options = freeIndexes.map(idx => ({
@@ -387,7 +383,8 @@ module.exports = {
           });
         }
 
-        // Asignación rápida
+        // Asignación rápida (Lineal)
+        await interaction.deferUpdate();
         for (const list of Object.values(compo.signups)) {
           const idx = list.findIndex(s => s && s.userId === user.id);
           if (idx !== -1) list[idx] = null;
@@ -397,7 +394,7 @@ module.exports = {
         compo.signups[role][firstFree] = { userId: user.id, ign: user.username };
         CompoStore.save(message.id, compo);
 
-        await interaction.update({ embeds: [buildCompoEmbed(compo)], components: buildCompoButtons(compo) });
+        await interaction.message.edit({ embeds: [buildCompoEmbed(compo)], components: buildCompoButtons(compo) });
         await interaction.followUp({
           content: `✅ <@${user.id}>, te has anotado como **${role.toUpperCase()}** con éxito.`,
           ephemeral: true,
