@@ -9,6 +9,25 @@ module.exports = {
   async execute(interaction, client) {
     // ── Slash Commands ─────────────────────────────────────────────
     if (interaction.isChatInputCommand()) {
+      // 1. Validar Canales Autorizados (aplica a todos los comandos)
+      if (process.env.ALLOWED_CHANNELS) {
+        const allowedChannels = process.env.ALLOWED_CHANNELS.split(",").map(c => c.trim());
+        if (allowedChannels.length > 0 && !allowedChannels.includes(interaction.channelId)) {
+          return interaction.reply({ content: "❌ No puedes usar comandos del bot en este canal.", ephemeral: true });
+        }
+      }
+
+      // 2. Validar Roles Autorizados (solo aplica para crear compos)
+      if (interaction.commandName === "pt-compo" && process.env.ALLOWED_ROLES) {
+        const allowedRoles = process.env.ALLOWED_ROLES.split(",").map(r => r.trim());
+        if (allowedRoles.length > 0) {
+          const hasRole = interaction.member.roles.cache.some(r => allowedRoles.includes(r.id));
+          if (!hasRole) {
+            return interaction.reply({ content: "❌ No tienes permisos de líder para crear composiciones.", ephemeral: true });
+          }
+        }
+      }
+
       const cmd = client.commands.get(interaction.commandName);
       if (!cmd) return;
       try {
