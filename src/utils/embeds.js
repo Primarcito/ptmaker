@@ -67,7 +67,7 @@ function buildCompoEmbed(compo) {
     for (let i = 0; i < max; i++) {
       const userObj = arrFixed[i];
       if (userObj) filledCount++;
-      const userStr = userObj ? `✅ **${userObj.ign}**` : "⬜ *vacío*";
+      const userStr = userObj ? `✅ <@${userObj.userId}>` : "⬜ *vacío*";
       const buildStr = roleBuilds[i] ? ` · *${roleBuilds[i]}*` : "";
       lines.push(`${userStr}${buildStr}`);
     }

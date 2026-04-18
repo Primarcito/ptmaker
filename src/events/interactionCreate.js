@@ -284,16 +284,29 @@ module.exports = {
       signupsArr[selectedIndex] = { userId: interaction.user.id, ign: interaction.user.username };
       CompoStore.save(msgId, compo);
 
-      // Responder YA para evitar timeout de 3s mientras editamos el mensaje principal
-      await interaction.update({ content: "✅ Asiento asegurado en el cartel principal.", components: [] });
+      // 1. Responder a la interacción del menú inmediatamente (ephemeral)
+      await interaction.update({ 
+        content: `✅ <@${interaction.user.id}>, has reclamado el asiento de **${roleBuilds[selectedIndex] || role}**.`, 
+        components: [] 
+      });
 
-      const mainMessage = await interaction.channel.messages.fetch(msgId).catch(() => null);
-      if (mainMessage) {
-        try {
-          await mainMessage.edit({ embeds: [buildCompoEmbed(compo)], components: buildCompoButtons(compo) });
-        } catch (e) {
-          console.error("Error al editar mensaje principal:", e);
+      // 2. Intentar actualizar el mensaje principal (el cartel público)
+      try {
+        const channel = interaction.channel;
+        const mainMessage = await channel.messages.fetch(msgId);
+        if (mainMessage) {
+          await mainMessage.edit({ 
+            embeds: [buildCompoEmbed(compo)], 
+            components: buildCompoButtons(compo) 
+          });
         }
+      } catch (e) {
+        console.error("Error crítico al editar cartel principal:", e);
+        // Informar al usuario si el cartel no se pudo actualizar
+        await interaction.followUp({ 
+          content: "⚠️ No pude actualizar el cartel principal (posible falta de permisos o mensaje borrado), pero tu asiendo quedó guardado internamente.", 
+          ephemeral: true 
+        }).catch(() => null);
       }
       return;
     }
@@ -386,7 +399,7 @@ module.exports = {
 
         await interaction.update({ embeds: [buildCompoEmbed(compo)], components: buildCompoButtons(compo) });
         await interaction.followUp({
-          content: `✅ Te has anotado como **${role.toUpperCase()}** con tu usuario de Discord.`,
+          content: `✅ <@${user.id}>, te has anotado como **${role.toUpperCase()}** con éxito.`,
           ephemeral: true,
         });
       } catch (err) {
