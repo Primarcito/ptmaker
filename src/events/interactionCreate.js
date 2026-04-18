@@ -59,7 +59,7 @@ module.exports = {
       // Roles autorizados
       const zvzRole = "1468028696148312189";
       const pvpPveRole = "1493273036369952860";
-      const adminRole = "852823068475785217"; // Rol que puede enviar en todos lados
+      const adminRoles = ["852823068475785217", "983987481961717782"]; // Roles Supremos (bypass)
 
       // Validación por actividad (ZvZ, PvP, PvE) basada en canales y roles admitidos
       const tipoLower = tipo.toLowerCase();
@@ -68,8 +68,9 @@ module.exports = {
       const pvpPveChannel = "1423098812938981449";
       const pvpZvzPveChannel = "1471843096018026669";
 
-      const hasZvzRole = interaction.member.roles.cache.has(zvzRole) || interaction.member.roles.cache.has(adminRole);
-      const hasPvpPveRole = interaction.member.roles.cache.has(pvpPveRole) || interaction.member.roles.cache.has(adminRole);
+      const hasAdmin = interaction.member.roles.cache.some(r => adminRoles.includes(r.id));
+      const hasZvzRole = interaction.member.roles.cache.has(zvzRole) || hasAdmin;
+      const hasPvpPveRole = interaction.member.roles.cache.has(pvpPveRole) || hasAdmin;
 
       if (tipoLower.includes("zvz")) {
         if (!hasZvzRole) {
