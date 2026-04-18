@@ -97,8 +97,13 @@ function buildCompoEmbed(compo) {
   );
   const isFull = totalFilled >= totalSlots;
 
+  let baseColor = 0xE05B5B; // Rojo para PvP y Default
+  const tLoStr = tipo.toLowerCase();
+  if (tLoStr.includes("pve")) baseColor = 0x3498DB; // Azul
+  if (tLoStr.includes("zvz")) baseColor = 0x9B59B6; // Morado
+
   const embed = new EmbedBuilder()
-    .setColor(isFull ? 0x57C457 : 0xE05B5B)
+    .setColor(isFull ? 0x57C457 : baseColor)
     .setTitle(`${isFull ? "✅" : "🗺️"} ${nombre}`)
     .addFields(
       { name: "📌 Tipo", value: tipo, inline: true },
@@ -177,7 +182,16 @@ client.once("clientReady", async () => {
   const cmds = [
     new SlashCommandBuilder()
       .setName("pt-compo")
-      .setDescription("Crea una plantilla de composición"),
+      .setDescription("Crea una plantilla de composición")
+      .addStringOption(o => o.setName("tipo")
+        .setDescription("Elige el tipo de composición")
+        .setRequired(true)
+        .addChoices(
+          { name: "🏰 ZvZ", value: "ZvZ" },
+          { name: "⚔️ PvP", value: "PvP" },
+          { name: "🌿 PvE", value: "PvE" }
+        )
+      ),
     new SlashCommandBuilder()
       .setName("pt-lanzar")
       .setDescription("Lanza una composición al canal")
@@ -250,10 +264,10 @@ async function handle(interaction) {
 
     // /pt-compo
     if (interaction.commandName === "pt-compo") {
-      const modal = new ModalBuilder().setCustomId("modal_compo").setTitle("📋 Nueva Plantilla");
+      const tipo = interaction.options.getString("tipo");
+      const modal = new ModalBuilder().setCustomId(`modal_compo_${tipo}`).setTitle(`📋 Nueva: ${tipo}`);
       modal.addComponents(
         new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("nombre").setLabel("Nombre").setStyle(TextInputStyle.Short).setRequired(true)),
-        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("tipo").setLabel("Tipo (PvE, PvP, ZvZ)").setStyle(TextInputStyle.Short).setRequired(true)),
         new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("composicion").setLabel("Roles y Armas (una por línea)").setStyle(TextInputStyle.Paragraph).setRequired(true).setPlaceholder("Tank\nIncubo\nHealer\nSantificador\nDPS\nDaga 1H")),
         new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("estrategia").setLabel("Notas Adicionales").setStyle(TextInputStyle.Paragraph).setRequired(false)),
       );
@@ -391,9 +405,9 @@ async function handle(interaction) {
   }
 
   // ── MODAL: Crear plantilla ────────────────────────────────
-  if (interaction.isModalSubmit() && interaction.customId === "modal_compo") {
+  if (interaction.isModalSubmit() && interaction.customId.startsWith("modal_compo_")) {
     const nombre = interaction.fields.getTextInputValue("nombre").trim();
-    const tipo = interaction.fields.getTextInputValue("tipo").trim();
+    const tipo = interaction.customId.replace("modal_compo_", "");
     const composRaw = interaction.fields.getTextInputValue("composicion").trim();
     const estrategia = interaction.fields.getTextInputValue("estrategia").trim();
     const hasAdmin = interaction.member.roles.cache.some(r => ADMIN_ROLES.includes(r.id));
