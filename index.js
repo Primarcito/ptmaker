@@ -187,8 +187,19 @@ client.once("clientReady", async () => {
       .setDescription("Panel admin de plantillas"),
   ];
   const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
+  // Registrar como Comandos Globales
   await rest.put(Routes.applicationCommands(client.user.id), { body: cmds.map(c => c.toJSON()) });
-  console.log("✅ Comandos registrados");
+  
+  // Limpiar comandos residuales locales (Guild-specific) que causan duplicados
+  for (const guild of client.guilds.cache.values()) {
+    try {
+      await rest.put(Routes.applicationGuildCommands(client.user.id, guild.id), { body: [] });
+    } catch (e) {
+      // Ignorar si no hay permisos
+    }
+  }
+
+  console.log("✅ Comandos registrados y duplicados locales limpiados");
 });
 
 // ════════════════════════════════════════════════════════════
