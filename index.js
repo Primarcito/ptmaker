@@ -7,6 +7,7 @@ const {
   TextInputBuilder, TextInputStyle,
 } = require("discord.js");
 const fs   = require("fs");
+const fsPromises = require("fs").promises;
 const path = require("path");
 
 // ════════════════════════════════════════════════════════════
@@ -21,11 +22,26 @@ if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 let templates = {};
 let compos    = {};
 
-try { templates = JSON.parse(fs.readFileSync(TEMPLATES_FILE, "utf8")); } catch {}
-try { compos    = JSON.parse(fs.readFileSync(COMPOS_FILE,    "utf8")); } catch {}
+try { 
+  templates = JSON.parse(fs.readFileSync(TEMPLATES_FILE, "utf8")); 
+} catch (err) {
+  if (err.code !== "ENOENT") {
+    console.error("FATAL: Error al leer templates.json. Verifica si el archivo está corrupto:", err);
+    process.exit(1);
+  }
+}
 
-const saveTemplates = () => fs.writeFileSync(TEMPLATES_FILE, JSON.stringify(templates, null, 2));
-const saveCompos    = () => fs.writeFileSync(COMPOS_FILE,    JSON.stringify(compos,    null, 2));
+try { 
+  compos = JSON.parse(fs.readFileSync(COMPOS_FILE, "utf8")); 
+} catch (err) {
+  if (err.code !== "ENOENT") {
+    console.error("FATAL: Error al leer compos.json. Verifica si el archivo está corrupto:", err);
+    process.exit(1);
+  }
+}
+
+const saveTemplates = () => fsPromises.writeFile(TEMPLATES_FILE, JSON.stringify(templates, null, 2)).catch(console.error);
+const saveCompos    = () => fsPromises.writeFile(COMPOS_FILE,    JSON.stringify(compos,    null, 2)).catch(console.error);
 
 // ════════════════════════════════════════════════════════════
 //  MAP: Dropdown pendiente
@@ -38,10 +54,10 @@ const pendingDropdowns = new Map();
 // ════════════════════════════════════════════════════════════
 //  CONFIG
 // ════════════════════════════════════════════════════════════
-const ADMIN_ROLES      = ["852823068475785217", "983987481961717782"];
-const ZVZ_ROLE         = "1468028696148312189";
-const PVPPVE_ROLE      = "1493273036369952860";
-const ALLOWED_CHANNELS = ["1402080321150652426", "1423098812938981449", "1471843096018026669"];
+const ADMIN_ROLES      = process.env.ADMIN_ROLES ? process.env.ADMIN_ROLES.split(",") : ["852823068475785217", "983987481961717782"];
+const ZVZ_ROLE         = process.env.ZVZ_ROLE || "1468028696148312189";
+const PVPPVE_ROLE      = process.env.PVPPVE_ROLE || "1493273036369952860";
+const ALLOWED_CHANNELS = process.env.ALLOWED_CHANNELS ? process.env.ALLOWED_CHANNELS.split(",") : ["1402080321150652426", "1423098812938981449", "1471843096018026669"];
 
 // ════════════════════════════════════════════════════════════
 //  PARSER
@@ -85,9 +101,11 @@ function buildCompoEmbed(compo) {
     .setColor(isFull ? 0x57C457 : 0xE05B5B)
     .setTitle(`${isFull ? "✅" : "🗺️"} ${nombre}`)
     .addFields(
-      { name: "📌 Tipo",  value: tipo,                           inline: true },
-      { name: "👥 Slots", value: `${totalFilled}/${totalSlots}`, inline: true },
+      { name: "📌 Tipo",  value: tipo, inline: true },
+      { name: "👥 Slots totales", value: `${totalFilled}/${totalSlots}`, inline: true }
     );
+
+  let rosterDesc = "";
 
   for (const { key, emoji, label } of [
     { key: "tank",    emoji: "🛡️", label: "Tank"    },
@@ -104,10 +122,13 @@ function buildCompoEmbed(compo) {
     for (let i = 0; i < max; i++) {
       const u = arr[i];
       if (u) filled++;
-      lines.push(`${u ? `✅ <@${u.userId}>` : "⬜ *vacío*"}${roleBuilds[i] ? ` · *${roleBuilds[i]}*` : ""}`);
+      const buildText = u && u.build ? u.build : roleBuilds[i];
+      lines.push(`${u ? `✅ **<@${u.userId}>**` : "⬜ *vacío*"}${buildText ? ` · *${buildText}*` : ""}`);
     }
-    embed.addFields({ name: `${emoji} ${label} (${filled}/${max})`, value: lines.join("\n"), inline: true });
+    rosterDesc += `\n**${emoji} ${label} (${filled}/${max})**\n${lines.join("\n")}\n`;
   }
+
+  embed.setDescription(rosterDesc || "No hay roles definidos.");
 
   if (estrategia) embed.addFields({ name: "📋 Estrategia", value: estrategia, inline: false });
   embed.setFooter({ text: `🌍 ${tipo} · publicado por ${authorTag}` }).setTimestamp();
@@ -132,6 +153,18 @@ function buildCompoButtons(compo) {
   return rows;
 }
 
+async function updateParentEmbed(client, compo) {
+  if (!compo.parentMsgId || !compo.channelId) return;
+  try {
+    const channel = client.channels.cache.get(compo.channelId) || await client.channels.fetch(compo.channelId);
+    if (!channel) return;
+    const parentMsg = await channel.messages.fetch(compo.parentMsgId);
+    if (parentMsg) await parentMsg.edit({ embeds: [buildCompoEmbed(compo)] });
+  } catch (err) {
+    console.error("Error actualizando cartel principal:", err);
+  }
+}
+
 // ════════════════════════════════════════════════════════════
 //  CLIENTE
 // ════════════════════════════════════════════════════════════
@@ -139,7 +172,7 @@ const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
 });
 
-client.once("ready", async () => {
+client.once("clientReady", async () => {
   console.log(`✅ Online: ${client.user.tag}`);
   const cmds = [
     new SlashCommandBuilder()
@@ -235,13 +268,26 @@ async function handle(interaction) {
       };
 
       const msg = await interaction.reply({
-        content: `📋 **${interaction.user.username}** publicó **${t.nombre}**. ¡Anotate!`,
+        content: `📋 **${interaction.user.username}** publicó **${t.nombre}**.\n🔗 ¡Anotate en el hilo inferior! 👇`,
         embeds: [buildCompoEmbed(compoData)],
-        components: buildCompoButtons(compoData),
         fetchReply: true,
       });
 
-      compos[msg.id] = compoData;
+      const thread = await msg.startThread({
+        name: `Anotarse: ${t.nombre}`.slice(0, 100),
+        autoArchiveDuration: 1440
+      });
+
+      const threadMsg = await thread.send({
+        content: "👇 **Elige tu rol usando estos botones:**",
+        components: buildCompoButtons(compoData)
+      });
+
+      compoData.parentMsgId = msg.id;
+      compoData.threadMsgId = threadMsg.id;
+      compoData.channelId   = interaction.channelId;
+
+      compos[threadMsg.id] = compoData;
       saveCompos();
       return;
     }
@@ -414,7 +460,12 @@ async function handle(interaction) {
       if (!removed)
         return interaction.reply({ content: "⚠️ No estás en ningún slot.", ephemeral: true });
       saveCompos();
-      await interaction.update({ embeds: [buildCompoEmbed(compo)], components: buildCompoButtons(compo) });
+      if (compo.parentMsgId) {
+         await interaction.update({ components: buildCompoButtons(compo) });
+         await updateParentEmbed(interaction.client, compo);
+      } else {
+         await interaction.update({ embeds: [buildCompoEmbed(compo)], components: buildCompoButtons(compo) });
+      }
       await interaction.followUp({ content: "↩️ Desanotado correctamente.", ephemeral: true });
       return;
     }
@@ -423,22 +474,37 @@ async function handle(interaction) {
     const roleMap = { signup_tank: "tank", signup_heal: "healer", signup_dps: "dps", signup_sup: "support" };
     const role = roleMap[customId];
 
-    if (compo.signups[role].some(s => s?.userId === user.id))
-      return interaction.reply({ content: "⚠️ Ya estás en ese rol.", ephemeral: true });
+    const availableIdxs = compo.signups[role].reduce((acc, s, i) => {
+      if (!s || s.userId === user.id) acc.push(i);
+      return acc;
+    }, []);
 
-    const freeIdxs = compo.signups[role].reduce((acc, s, i) => { if (!s) acc.push(i); return acc; }, []);
-    if (freeIdxs.length === 0)
+    if (availableIdxs.length === 0)
       return interaction.reply({ content: "❌ Sin slots disponibles.", ephemeral: true });
 
     const roleBuilds = compo.builds?.[role] || [];
+    const options = [];
 
-    // Múltiples armas libres → Mostrar dropdown ephemeral
-    if (roleBuilds.length > 0 && freeIdxs.length > 1) {
-      const options = freeIdxs.map(idx => ({
-        label: (roleBuilds[idx] || `Asiento ${idx + 1}`).slice(0, 100),
-        value: String(idx),
-        emoji: "🎯",
-      }));
+    availableIdxs.forEach(idx => {
+      const buildDef = roleBuilds[idx];
+      if (buildDef) {
+        if (buildDef.includes("/")) {
+          buildDef.split("/").forEach(b => {
+             options.push({ label: b.trim().slice(0, 100), value: `${idx}|${b.trim()}`.slice(0, 100), emoji: "🎯" });
+          });
+        } else {
+          options.push({ label: buildDef.slice(0, 100), value: `${idx}|${buildDef}`.slice(0, 100), emoji: "🎯" });
+        }
+      } else {
+        const label = `Asiento ${idx + 1}`;
+        options.push({ label: label, value: `${idx}|`, emoji: "🎯" });
+      }
+    });
+
+    const isCurrentlyInRole = compo.signups[role].some(s => s?.userId === user.id);
+
+    // Múltiples armas libres o especialidades → Mostrar dropdown ephemeral
+    if (options.length > 1) {
       const select = new StringSelectMenuBuilder()
         .setCustomId(`pick_${message.id}_${role}`)
         .setPlaceholder("Elige tu especialidad...")
@@ -448,6 +514,11 @@ async function handle(interaction) {
       // Guardamos la interacción para editar el cartel cuando el select responda.
       await interaction.deferUpdate();
       pendingDropdowns.set(user.id, { origInteraction: interaction, msgId: message.id });
+      
+      // Limpiar automáticamente después de 14 minutos para evitar memory leak
+      setTimeout(() => {
+        pendingDropdowns.delete(user.id);
+      }, 14 * 60 * 1000);
 
       await interaction.followUp({
         content: `⚔️ Elige tu especialidad de **${role.toUpperCase()}**:`,
@@ -457,14 +528,28 @@ async function handle(interaction) {
       return;
     }
 
+    if (isCurrentlyInRole) {
+      return interaction.reply({ content: "⚠️ Ya estás anotado y no hay otras especialidades disponibles.", ephemeral: true });
+    }
+
     // Un solo slot libre → Asignar directo via update()
+    const [strIdx, ...restBuild] = options[0].value.split("|");
+    const targetIdx = parseInt(strIdx, 10);
+    const targetBuild = restBuild.join("|") || undefined;
+
+    // Limpiar de otros roles Y del rol actual
     for (const arr of Object.values(compo.signups)) {
       const i = arr.findIndex(s => s?.userId === user.id);
       if (i !== -1) arr[i] = null;
     }
-    compo.signups[role][freeIdxs[0]] = { userId: user.id, ign: user.username };
+    compo.signups[role][targetIdx] = { userId: user.id, ign: user.username, build: targetBuild };
     saveCompos();
-    await interaction.update({ embeds: [buildCompoEmbed(compo)], components: buildCompoButtons(compo) });
+    if (compo.parentMsgId) {
+       await interaction.update({ components: buildCompoButtons(compo) });
+       await updateParentEmbed(interaction.client, compo);
+    } else {
+       await interaction.update({ embeds: [buildCompoEmbed(compo)], components: buildCompoButtons(compo) });
+    }
     await interaction.followUp({ content: `✅ Anotado como **${role.toUpperCase()}**.`, ephemeral: true });
     return;
   }
@@ -476,14 +561,17 @@ async function handle(interaction) {
     const firstUnder    = withoutPrefix.indexOf("_");
     const msgId         = withoutPrefix.slice(0, firstUnder);
     const role          = withoutPrefix.slice(firstUnder + 1);
-    const selectedIndex = parseInt(interaction.values[0], 10);
+    const [strIdx, ...restBuild] = interaction.values[0].split("|");
+    const selectedIndex = parseInt(strIdx, 10);
+    const exactBuild = restBuild.join("|") || undefined;
 
     const compo = compos[msgId];
     if (!compo)
       return interaction.update({ content: "❌ Composición expirada.", components: [] });
 
     const roleBuilds = compo.builds?.[role] || [];
-    if (compo.signups[role][selectedIndex] !== null)
+    const occupant = compo.signups[role][selectedIndex];
+    if (occupant !== null && occupant.userId !== interaction.user.id)
       return interaction.update({ content: "❌ Ese asiento ya fue tomado. Inténtalo de nuevo.", components: [] });
 
     // Limpiar de otros roles
@@ -491,10 +579,10 @@ async function handle(interaction) {
       const i = arr.findIndex(s => s?.userId === interaction.user.id);
       if (i !== -1) arr[i] = null;
     }
-    compo.signups[role][selectedIndex] = { userId: interaction.user.id, ign: interaction.user.username };
+    compo.signups[role][selectedIndex] = { userId: interaction.user.id, ign: interaction.user.username, build: exactBuild };
     saveCompos();
 
-    const buildName = roleBuilds[selectedIndex] || role.toUpperCase();
+    const buildName = exactBuild || roleBuilds[selectedIndex] || role.toUpperCase();
 
     // 1. Cerrar el menú ephemeral
     await interaction.update({ content: `✅ Anotado · **${buildName}**`, components: [] });
@@ -504,10 +592,15 @@ async function handle(interaction) {
     if (pending && pending.msgId === msgId) {
       pendingDropdowns.delete(interaction.user.id);
       try {
-        await pending.origInteraction.editReply({
-          embeds:     [buildCompoEmbed(compo)],
-          components: buildCompoButtons(compo),
-        });
+        if (compo.parentMsgId) {
+          await pending.origInteraction.editReply({ components: buildCompoButtons(compo) });
+          await updateParentEmbed(interaction.client, compo);
+        } else {
+          await pending.origInteraction.editReply({
+            embeds: [buildCompoEmbed(compo)],
+            components: buildCompoButtons(compo),
+          });
+        }
       } catch (e) {
         console.error("[pick] Error editando cartel:", e.message);
       }
