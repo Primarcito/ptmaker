@@ -267,9 +267,16 @@ module.exports = {
 
     // ── String Select Menu (Elección de Arma/Asiento) ───────────
     if (interaction.isStringSelectMenu() && interaction.customId.startsWith("selectslot_")) {
-      const parts = interaction.customId.split("_");
-      const msgId = parts[1];
-      const role = parts[2];
+      // Formato del customId: selectslot_MSGID_CHANNELID_role
+      const raw = interaction.customId; // ej: "selectslot_112233445566_998877665544_healer"
+      const firstUnderscore = raw.indexOf("_");                   // pos de primer _
+      const rest = raw.slice(firstUnderscore + 1);                 // "112233_998877_healer"
+      const lastUnderscore = rest.lastIndexOf("_");               // pos del último _
+      const role = rest.slice(lastUnderscore + 1);                 // "healer"
+      const idsStr = rest.slice(0, lastUnderscore);               // "112233_998877"
+      const midUnderscore = idsStr.lastIndexOf("_");              // separa msgId y channelId
+      const msgId = idsStr.slice(0, midUnderscore);               // ID del cartel público
+      const channelId = idsStr.slice(midUnderscore + 1);          // ID del canal
       const selectedIndex = parseInt(interaction.values[0], 10);
 
       // Respuesta rápida para evitar el error rojo de Discord
@@ -298,28 +305,25 @@ module.exports = {
       }
 
       compo.signups[role][selectedIndex] = { userId: interaction.user.id, ign: interaction.user.username };
-      compo.signups = { ...compo.signups }; // Forzar cambio de referencia
+      compo.signups = { ...compo.signups };
       
       CompoStore.save(msgId, compo);
 
-      // Actualizar el cartel principal
-      // El SelectMenu es un mensaje ephemeral separado, así que hay que fetchear
-      // el mensaje original del cartel y editarlo manualmente.
+      // Actualizar el cartel principal con force:true para saltarse la caché
       try {
-        const targetChannel = await interaction.client.channels.fetch(interaction.channelId);
-        const mainMessage = await targetChannel.messages.fetch(msgId);
-        if (mainMessage) {
-          await mainMessage.edit({
-            embeds: [buildCompoEmbed(compo)],
-            components: buildCompoButtons(compo)
-          });
-        }
+        const ch = await interaction.client.channels.fetch(channelId, { force: true });
+        const mainMessage = await ch.messages.fetch(msgId, { force: true });
+        await mainMessage.edit({
+          embeds: [buildCompoEmbed(compo)],
+          components: buildCompoButtons(compo)
+        });
+        console.log(`[selectslot] Cartel ${msgId} actualizado OK`);
       } catch (e) {
-        console.error("Error crítico al actualizar cartel:", e);
+        console.error(`[selectslot] Error al actualizar cartel ${msgId}:`, e.message);
       }
 
       await interaction.editReply({ 
-        content: `✅ <@${interaction.user.id}>, has reclamado el asiento de **${roleBuilds[selectedIndex] || role}**.`, 
+        content: `✅ <@${interaction.user.id}>, reclamaste **${roleBuilds[selectedIndex] || role}**.`, 
         components: [] 
       });
       return;
@@ -390,7 +394,7 @@ module.exports = {
           }));
 
           const select = new StringSelectMenuBuilder()
-            .setCustomId(`selectslot_${message.id}_${role}`)
+            .setCustomId(`selectslot_${message.id}_${interaction.channelId}_${role}`)
             .setPlaceholder("Selecciona tu especialidad...")
             .addOptions(options.slice(0, 25));
 
