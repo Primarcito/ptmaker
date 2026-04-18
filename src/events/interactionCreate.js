@@ -9,12 +9,10 @@ module.exports = {
   async execute(interaction, client) {
     // ── Slash Commands ─────────────────────────────────────────────
     if (interaction.isChatInputCommand()) {
-      // 1. Validar Canales Autorizados (aplica a todos los comandos)
-      if (process.env.ALLOWED_CHANNELS) {
-        const allowedChannels = process.env.ALLOWED_CHANNELS.split(",").map(c => c.trim());
-        if (allowedChannels.length > 0 && !allowedChannels.includes(interaction.channelId)) {
-          return interaction.reply({ content: "❌ No puedes usar comandos del bot en este canal.", ephemeral: true });
-        }
+      // 1. Validar Canales Permitidos Globales (IDs quemadas)
+      const allowedChannelsGlobal = ["1402080321150652426", "1423098812938981449", "1471843096018026669"];
+      if (!allowedChannelsGlobal.includes(interaction.channelId)) {
+        return interaction.reply({ content: "❌ No puedes usar comandos del bot en este canal.", ephemeral: true });
       }
 
       // 2. Validar Roles Autorizados (solo aplica para crear compos)
@@ -68,6 +66,22 @@ module.exports = {
       const slotsRaw   = interaction.fields.getTextInputValue("slots").trim();
       const buildsRaw  = interaction.fields.getTextInputValue("builds").trim();
       const estrategia = interaction.fields.getTextInputValue("estrategia").trim();
+
+      // Validación por actividad (ZvZ, PvP, PvE) basada en canales admitidos
+      const tipoLower = tipo.toLowerCase();
+      const channelId = interaction.channelId;
+      const testChannel = "1402080321150652426";
+      const pvpPveChannel = "1423098812938981449";
+      const pvpZvzPveChannel = "1471843096018026669";
+
+      if (channelId !== testChannel) {
+        if (tipoLower.includes("zvz") && channelId !== pvpZvzPveChannel) {
+          return interaction.reply({ content: `❌ Composiciones de ZvZ solo se pueden lanzar en <#${pvpZvzPveChannel}>.`, ephemeral: true });
+        }
+        if ((tipoLower.includes("pvp") || tipoLower.includes("pve")) && (channelId !== pvpPveChannel && channelId !== pvpZvzPveChannel)) {
+          return interaction.reply({ content: `❌ Composiciones de PvP/PvE solo en <#${pvpPveChannel}> o <#${pvpZvzPveChannel}>.`, ephemeral: true });
+        }
+      }
 
       const slots  = parseSlots(slotsRaw);
       const builds = parseBuilds(buildsRaw);
