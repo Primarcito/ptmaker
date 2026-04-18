@@ -301,20 +301,21 @@ module.exports = {
       
       CompoStore.save(msgId, compo);
 
-      // Actualizar el cartel principal
+      // Actualizar el cartel principal (el canal puede ser parcial, así que usamos el client)
       try {
-        const mainMessage = await interaction.channel.messages.fetch(msgId);
+        const targetChannel = await interaction.client.channels.fetch(interaction.channelId);
+        const mainMessage = await targetChannel.messages.fetch(msgId);
         if (mainMessage) {
           const finalEmbed = buildCompoEmbed(compo);
           const finalButtons = buildCompoButtons(compo);
           await mainMessage.edit({ embeds: [finalEmbed], components: finalButtons });
         }
       } catch (e) {
-        console.error("Error al actualizar cartel:", e);
+        console.error("Error crítico al actualizar cartel:", e);
       }
       
       await interaction.editReply({ 
-        content: `✅ <@${interaction.user.id}>, has reclamado el asiento de **${roleBuilds[selectedIndex] || role}** con éxito.`, 
+        content: `✅ <@${interaction.user.id}>, has reclamado el asiento de **${roleBuilds[selectedIndex] || role}**. (ID Cartel: ${msgId.slice(-5)})`, 
         components: [] 
       });
       return;
@@ -396,24 +397,20 @@ module.exports = {
           });
         }
 
-        // Asignación rápida (Lineal)
-        await interaction.deferUpdate();
-        for (const list of Object.values(compo.signups)) {
-          const idx = list.findIndex(s => s && s.userId === user.id);
-          if (idx !== -1) list[idx] = null;
-        }
-
         const firstFree = freeIndexes[0];
         compo.signups[role][firstFree] = { userId: user.id, ign: user.username };
         compo.signups = { ...compo.signups };
 
         CompoStore.save(message.id, compo);
 
-        const freshEmbed = buildCompoEmbed(compo);
-        const freshButtons = buildCompoButtons(compo);
-        await interaction.editReply({ embeds: [freshEmbed], components: freshButtons });
+        // Usar update() directo en el botón es lo más rápido y seguro en Discord.js
+        await interaction.update({ 
+          embeds: [buildCompoEmbed(compo)], 
+          components: buildCompoButtons(compo) 
+        });
+
         await interaction.followUp({
-          content: `✅ <@${user.id}>, te has anotado como **${role.toUpperCase()}** con éxito.`,
+          content: `✅ <@${user.id}>, te has anotado como **${role.toUpperCase()}**. (v-direct)`,
           ephemeral: true,
         });
       } catch (err) {
