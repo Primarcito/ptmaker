@@ -109,9 +109,9 @@ function buildCompoEmbed(compo) {
 
   for (const { key, emoji, label } of [
     { key: "tank", emoji: "🛡️", label: "Tank" },
-    { key: "healer", emoji: "🚑", label: "Healer" },
-    { key: "dps", emoji: "🔥", label: "DPS" },
-    { key: "support", emoji: "✨", label: "Support" },
+    { key: "healer", emoji: "🌿", label: "Healer" },
+    { key: "dps", emoji: "⚔️", label: "DPS" },
+    { key: "support", emoji: "🔮", label: "Support" },
   ]) {
     const max = slots[key] || 0;
     if (max === 0) continue;
@@ -142,9 +142,9 @@ function buildCompoButtons(compo) {
   const btns = [];
 
   if ((slots.tank ?? 0) > 0) btns.push(new ButtonBuilder().setCustomId("signup_tank").setLabel(`🛡️ Tank (${filled("tank")}/${slots.tank})`).setStyle(ButtonStyle.Primary).setDisabled(full("tank")));
-  if ((slots.healer ?? 0) > 0) btns.push(new ButtonBuilder().setCustomId("signup_heal").setLabel(`🚑 Healer (${filled("healer")}/${slots.healer})`).setStyle(ButtonStyle.Primary).setDisabled(full("healer")));
-  if ((slots.dps ?? 0) > 0) btns.push(new ButtonBuilder().setCustomId("signup_dps").setLabel(`🔥 DPS (${filled("dps")}/${slots.dps})`).setStyle(ButtonStyle.Primary).setDisabled(full("dps")));
-  if ((slots.support ?? 0) > 0) btns.push(new ButtonBuilder().setCustomId("signup_sup").setLabel(`✨ Support (${filled("support")}/${slots.support})`).setStyle(ButtonStyle.Primary).setDisabled(full("support")));
+  if ((slots.healer ?? 0) > 0) btns.push(new ButtonBuilder().setCustomId("signup_heal").setLabel(`🌿 Healer (${filled("healer")}/${slots.healer})`).setStyle(ButtonStyle.Primary).setDisabled(full("healer")));
+  if ((slots.dps ?? 0) > 0) btns.push(new ButtonBuilder().setCustomId("signup_dps").setLabel(`⚔️ DPS (${filled("dps")}/${slots.dps})`).setStyle(ButtonStyle.Primary).setDisabled(full("dps")));
+  if ((slots.support ?? 0) > 0) btns.push(new ButtonBuilder().setCustomId("signup_sup").setLabel(`🔮 Support (${filled("support")}/${slots.support})`).setStyle(ButtonStyle.Primary).setDisabled(full("support")));
   btns.push(new ButtonBuilder().setCustomId("signup_out").setLabel("✗ Desanotarme").setStyle(ButtonStyle.Danger));
   btns.push(new ButtonBuilder().setCustomId("signup_invite").setLabel("🎮 Invites").setStyle(ButtonStyle.Secondary));
 
