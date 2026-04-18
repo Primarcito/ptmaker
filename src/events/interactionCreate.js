@@ -302,21 +302,24 @@ module.exports = {
       
       CompoStore.save(msgId, compo);
 
-      // Actualizar el cartel principal (el canal puede ser parcial, así que usamos el client)
+      // Actualizar el cartel principal
+      // El SelectMenu es un mensaje ephemeral separado, así que hay que fetchear
+      // el mensaje original del cartel y editarlo manualmente.
       try {
         const targetChannel = await interaction.client.channels.fetch(interaction.channelId);
         const mainMessage = await targetChannel.messages.fetch(msgId);
         if (mainMessage) {
-          const finalEmbed = buildCompoEmbed(compo);
-          const finalButtons = buildCompoButtons(compo);
-          await mainMessage.edit({ embeds: [finalEmbed], components: finalButtons });
+          await mainMessage.edit({
+            embeds: [buildCompoEmbed(compo)],
+            components: buildCompoButtons(compo)
+          });
         }
       } catch (e) {
         console.error("Error crítico al actualizar cartel:", e);
       }
-      
+
       await interaction.editReply({ 
-        content: `✅ <@${interaction.user.id}>, has reclamado el asiento de **${roleBuilds[selectedIndex] || role}**. (ID Cartel: ${msgId.slice(-5)})`, 
+        content: `✅ <@${interaction.user.id}>, has reclamado el asiento de **${roleBuilds[selectedIndex] || role}**.`, 
         components: [] 
       });
       return;
@@ -337,7 +340,6 @@ module.exports = {
 
         // ── Desanotarse ──
         if (customId === "signup_out") {
-          await interaction.deferUpdate();
           let removed = false;
           for (const role of Object.keys(compo.signups)) {
             const idx = compo.signups[role].findIndex((s) => s && s.userId === user.id);
@@ -348,11 +350,12 @@ module.exports = {
           }
 
           if (!removed) {
-            return interaction.followUp({ content: "❌ No estás anotado en esta compo.", ephemeral: true });
+            return interaction.reply({ content: "❌ No estás anotado en esta compo.", ephemeral: true });
           }
 
           CompoStore.save(message.id, compo);
-          await interaction.editReply({ embeds: [buildCompoEmbed(compo)], components: buildCompoButtons(compo) });
+          // update() edita el mensaje padre del botón (el cartel público)
+          await interaction.update({ embeds: [buildCompoEmbed(compo)], components: buildCompoButtons(compo) });
           await interaction.followUp({ content: "✅ Te has desanotado de la compo.", ephemeral: true });
           return;
         }
@@ -421,7 +424,7 @@ module.exports = {
         });
 
         await interaction.followUp({
-          content: `✅ <@${user.id}>, te has anotado como **${role.toUpperCase()}**. (v-direct)`,
+          content: `✅ <@${user.id}>, te has anotado como **${role.toUpperCase()}**.`,
           ephemeral: true,
         });
       } catch (err) {
