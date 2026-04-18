@@ -309,23 +309,28 @@ module.exports = {
       
       CompoStore.save(msgId, compo);
 
-      // Actualizar el cartel principal con force:true para saltarse la caché
+      // El mensaje del selectMenu NO es efímero: usamos update() para colapsarlo
+      // y luego editamos el cartel principal de forma separada.
+      await interaction.update({ 
+        content: `✅ <@${interaction.user.id}> se anotó como **${roleBuilds[selectedIndex] || role.toUpperCase()}**`, 
+        components: [],
+        embeds: []
+      });
+
+      // Editar el cartel principal usando guild (la forma más robusta)
       try {
-        const ch = await interaction.client.channels.fetch(channelId, { force: true });
+        const guild = interaction.guild;
+        const ch = guild.channels.cache.get(channelId) 
+              ?? await guild.channels.fetch(channelId);
         const mainMessage = await ch.messages.fetch(msgId, { force: true });
         await mainMessage.edit({
           embeds: [buildCompoEmbed(compo)],
           components: buildCompoButtons(compo)
         });
-        console.log(`[selectslot] Cartel ${msgId} actualizado OK`);
       } catch (e) {
         console.error(`[selectslot] Error al actualizar cartel ${msgId}:`, e.message);
       }
 
-      await interaction.editReply({ 
-        content: `✅ <@${interaction.user.id}>, reclamaste **${roleBuilds[selectedIndex] || role}**.`, 
-        components: [] 
-      });
       return;
     }
 
@@ -398,10 +403,11 @@ module.exports = {
             .setPlaceholder("Selecciona tu especialidad...")
             .addOptions(options.slice(0, 25));
 
+          // ⚠️ NO efímero: el update() del select necesita editar este mensaje,
+          //    que a su vez reemplazamos con el cartel actualizado.
           return interaction.reply({
-            content: "👇 **Hay múltiples especialidades libres.** Selecciona la tuya:",
+            content: `<@${interaction.user.id}> 👇 Selecciona tu especialidad para **${role.toUpperCase()}**:`,
             components: [new ActionRowBuilder().addComponents(select)],
-            ephemeral: true
           });
         }
 
