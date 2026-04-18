@@ -296,7 +296,7 @@ async function handle(interaction) {
 
       try {
         const thread = await msg.startThread({
-          name: `Anotarse: ${t.nombre}`.slice(0, 100),
+          name: `[${t.tipo}] ${t.nombre}`.slice(0, 100),
           autoArchiveDuration: 1440
         });
 
@@ -415,6 +415,21 @@ async function handle(interaction) {
     return interaction.reply({ content: `✅ **${nombre}** guardada · Usa \`/pt-lanzar\` para publicarla.`, ephemeral: true });
   }
 
+  // ── MODAL: Renombrar plantilla ──────────────────────────────
+  if (interaction.isModalSubmit() && interaction.customId.startsWith("dash_modal_ren_")) {
+    const origName = interaction.customId.replace("dash_modal_ren_", "");
+    const nombre = interaction.fields.getTextInputValue("nombre").trim();
+    if (!templates[origName]) return interaction.reply({ content: "❌ No encontrada.", ephemeral: true });
+    
+    if (origName !== nombre) {
+      templates[nombre] = templates[origName];
+      templates[nombre].nombre = nombre;
+      delete templates[origName];
+      saveTemplates();
+    }
+    return interaction.update({ content: `✅ Renombrada a **${nombre}**.`, embeds: [], components: [] });
+  }
+
   // ── MODAL: Editar plantilla ───────────────────────────────
   if (interaction.isModalSubmit() && interaction.customId.startsWith("dash_modal_edit_")) {
     const tName = interaction.customId.replace("dash_modal_edit_", "");
@@ -425,7 +440,7 @@ async function handle(interaction) {
 
     if (Object.values(slots).reduce((a, b) => a + b, 0) === 0)
       return interaction.reply({ content: "❌ Formato inválido.", ephemeral: true });
-
+    
     templates[tName] = { ...(templates[tName] || {}), tipo, slots, builds, estrategia, rawComposicion: composRaw };
     saveTemplates();
     return interaction.update({ content: `✅ **${tName}** actualizada.`, embeds: [], components: [] });
@@ -450,6 +465,7 @@ async function handle(interaction) {
       .setFooter({ text: `Creada por ${t.authorTag}` });
 
     const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`dash_rename_${tName}`).setLabel("🏷️ Renombrar").setStyle(ButtonStyle.Success),
       new ButtonBuilder().setCustomId(`dash_edit_${tName}`).setLabel("✏️ Editar").setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId(`dash_askdel_${tName}`).setLabel("🗑️ Borrar").setStyle(ButtonStyle.Danger),
       new ButtonBuilder().setCustomId("dash_back").setLabel("⬅️ Volver").setStyle(ButtonStyle.Secondary),
@@ -475,6 +491,18 @@ async function handle(interaction) {
         content: "## 🎛️ Dashboard · Plantillas\nElige cuál administrar:",
         embeds: [], components: [new ActionRowBuilder().addComponents(select)],
       });
+    }
+
+    if (id.startsWith("dash_rename_")) {
+      const tName = id.replace("dash_rename_", "");
+      if (!templates[tName]) return interaction.reply({ content: "❌ No encontrada.", ephemeral: true });
+      const modal = new ModalBuilder()
+        .setCustomId(`dash_modal_ren_${tName}`)
+        .setTitle(`🏷️ Renombrar`.slice(0, 45));
+      modal.addComponents(
+        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("nombre").setLabel("Nuevo Nombre").setStyle(TextInputStyle.Short).setValue(tName).setRequired(true))
+      );
+      return interaction.showModal(modal);
     }
 
     if (id.startsWith("dash_edit_")) {
