@@ -161,10 +161,10 @@ function buildCompoEmbed(compo) {
                  const u = arr[i];
                  const buildText = u && u.build ? u.build : roleBuilds[i];
                  if (u) {
-                     parties[pt].players.push(`${color} ✅ <@${u.userId}> · *${buildText || label}*`);
+                     parties[pt].players.push(`${color} <@${u.userId}> - *${buildText || label}*`);
                      parties[pt].filled++;
                  } else {
-                     parties[pt].players.push(`${color} ⬜ *vacío* · *${buildText || label}*`);
+                     parties[pt].players.push(`${color} *${buildText || label}*`);
                  }
                  parties[pt].total++;
              }
@@ -174,8 +174,7 @@ function buildCompoEmbed(compo) {
         const ptKeys = Object.keys(parties).map(Number).sort((a,b) => a-b);
         for (const pt of ptKeys) {
             const pObj = parties[pt];
-            const pName = pt === 1 ? "Main Zerg" : (pt === 2 ? "Flanco / Bombsquad" : `Escuadrón ${pt}`);
-            rosterDesc += `### ⚔️ PARTY ${pt} (${pName}) [${pObj.filled}/${pObj.total}]\n${pObj.players.join("\n")}\n\n`;
+            rosterDesc += `### ⚔️ Party ${pt} [${pObj.filled}/${pObj.total}]\n${pObj.players.join("\n")}\n\n`;
         }
     } else {
         let parties = [];
@@ -191,7 +190,7 @@ function buildCompoEmbed(compo) {
           const renderPlayer = (i) => {
             const u = arr[i];
             const buildText = u && u.build ? u.build : roleBuilds[i];
-            return `${color} ${u ? `✅ <@${u.userId}>` : "⬜ *vacío*"} · *${buildText || label}*`;
+            return u ? `${color} <@${u.userId}> - *${buildText || label}*` : `${color} *${buildText || label}*`;
           };
 
           let roleSlotsAllocated = 0;
@@ -222,8 +221,7 @@ function buildCompoEmbed(compo) {
 
         parties.forEach((p, idx) => {
            if (p.currentSlots > 0) {
-               const pName = idx === 0 ? "Main Zerg" : (idx === 1 ? "Flanco / Bombsquad" : `Escuadrón ${idx+1}`);
-               rosterDesc += `### ⚔️ PARTY ${idx + 1} (${pName}) [${p.filled}/${p.currentSlots}]\n${p.blocks.join("\n")}\n\n`;
+               rosterDesc += `### ⚔️ Party ${idx + 1} [${p.filled}/${p.currentSlots}]\n${p.blocks.join("\n")}\n\n`;
            }
         });
     }
