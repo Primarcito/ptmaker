@@ -130,7 +130,7 @@ function buildCompoEmbed(compo) {
 
   embed.setDescription(rosterDesc || "No hay roles definidos.");
 
-  if (estrategia) embed.addFields({ name: "📋 Estrategia", value: estrategia, inline: false });
+  if (estrategia) embed.addFields({ name: "📋 Notas", value: estrategia, inline: false });
   embed.setFooter({ text: `🌍 ${tipo} · publicado por ${authorTag}` }).setTimestamp();
   return embed;
 }
@@ -146,6 +146,7 @@ function buildCompoButtons(compo) {
   if ((slots.dps ?? 0) > 0) btns.push(new ButtonBuilder().setCustomId("signup_dps").setLabel(`🔥 DPS (${filled("dps")}/${slots.dps})`).setStyle(ButtonStyle.Primary).setDisabled(full("dps")));
   if ((slots.support ?? 0) > 0) btns.push(new ButtonBuilder().setCustomId("signup_sup").setLabel(`✨ Support (${filled("support")}/${slots.support})`).setStyle(ButtonStyle.Primary).setDisabled(full("support")));
   btns.push(new ButtonBuilder().setCustomId("signup_out").setLabel("✗ Desanotarme").setStyle(ButtonStyle.Danger));
+  btns.push(new ButtonBuilder().setCustomId("signup_invite").setLabel("🎮 Invites").setStyle(ButtonStyle.Secondary));
 
   const rows = [];
   for (let i = 0; i < btns.length; i += 5)
@@ -169,7 +170,7 @@ async function updateParentEmbed(client, compo) {
 //  CLIENTE
 // ════════════════════════════════════════════════════════════
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildVoiceStates],
 });
 
 client.once("clientReady", async () => {
@@ -185,6 +186,13 @@ client.once("clientReady", async () => {
     new SlashCommandBuilder()
       .setName("pt-dashboard")
       .setDescription("Panel admin de plantillas"),
+    new SlashCommandBuilder()
+      .setName("pt-moveall")
+      .setDescription("Mueve a inscritos a un canal de voz")
+      .addChannelOption(o => o.setName("canal").setDescription("Canal de voz destino").setRequired(true)),
+    new SlashCommandBuilder()
+      .setName("pt-ping")
+      .setDescription("Etiqueta a todos los inscritos de la compo"),
   ];
   const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
   // Registrar como Comandos Globales
@@ -247,7 +255,7 @@ async function handle(interaction) {
         new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("nombre").setLabel("Nombre").setStyle(TextInputStyle.Short).setRequired(true)),
         new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("tipo").setLabel("Tipo (PvE, PvP, ZvZ)").setStyle(TextInputStyle.Short).setRequired(true)),
         new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("composicion").setLabel("Roles y Armas (una por línea)").setStyle(TextInputStyle.Paragraph).setRequired(true).setPlaceholder("Tank\nIncubo\nHealer\nSantificador\nDPS\nDaga 1H")),
-        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("estrategia").setLabel("Estrategia / Notas").setStyle(TextInputStyle.Paragraph).setRequired(false)),
+        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("estrategia").setLabel("Notas Adicionales").setStyle(TextInputStyle.Paragraph).setRequired(false)),
       );
       return interaction.showModal(modal);
     }
@@ -313,6 +321,48 @@ async function handle(interaction) {
       compos[targetId] = compoData;
       saveCompos();
       return;
+    }
+
+    // Resolutor de composición activa (para ping o moveall)
+    const resolveTargetCompo = () => {
+      return Object.values(compos)
+        .filter(c => c.parentMsgId === interaction.channelId || c.channelId === interaction.channelId || c.threadMsgId === interaction.channelId)
+        .sort((a, b) => b.createdAt - a.createdAt)[0];
+    };
+
+    // /pt-ping
+    if (interaction.commandName === "pt-ping") {
+      const c = resolveTargetCompo();
+      if (!c) return interaction.reply({ content: "❌ Composición no encontrada. Úsalo dentro del hilo de una compo activa.", ephemeral: true });
+      let users = [];
+      for (const arr of Object.values(c.signups)) for (const s of arr) if (s && s.userId) users.push(`<@${s.userId}>`);
+      if (!users.length) return interaction.reply({ content: "⚠️ No hay inscritos.", ephemeral: true });
+      return interaction.reply({ content: `🔔 **Aviso:** ${users.join(" ")}`, allowedMentions: { parse: ['users'] } });
+    }
+
+    // /pt-moveall
+    if (interaction.commandName === "pt-moveall") {
+      const c = resolveTargetCompo();
+      if (!c) return interaction.reply({ content: "❌ Composición no encontrada. Úsalo dentro del hilo de una compo activa.", ephemeral: true });
+      if (c.authorId !== interaction.user.id && !hasAdmin) return interaction.reply({ content: "❌ Solo el creador de la party o administradores.", ephemeral: true });
+      
+      const channel = interaction.options.getChannel("canal");
+      if (!channel || !channel.isVoiceBased()) return interaction.reply({ content: "❌ Selecciona un canal de voz válido.", ephemeral: true });
+      
+      await interaction.deferReply({ ephemeral: true });
+      let userIds = [];
+      for (const arr of Object.values(c.signups)) for (const s of arr) if (s && s.userId) userIds.push(s.userId);
+      if (!userIds.length) return interaction.editReply("⚠️ Nadie anotado.");
+      
+      let moved = 0, off = 0, errs = 0;
+      await Promise.all(userIds.map(async (uId) => {
+         try {
+           const member = interaction.guild.members.cache.get(uId) || await interaction.guild.members.fetch(uId).catch(()=>null);
+           if (!member || !member.voice.channelId) { off++; return; }
+           await member.voice.setChannel(channel.id); moved++;
+         } catch { errs++; }
+      }));
+      return interaction.editReply(`✅ **Movidos:** ${moved} | 📴 **Desconectados o sin voz:** ${off} | ⚠️ **Errores:** ${errs}`);
     }
 
     // /pt-dashboard
@@ -394,7 +444,7 @@ async function handle(interaction) {
       .addFields(
         { name: "📌 Tipo", value: t.tipo, inline: true },
         { name: "👥 Slots", value: String(totalSlots), inline: true },
-        { name: "📋 Estrategia", value: t.estrategia || "*Sin estrategia*", inline: false },
+        { name: "📋 Notas", value: t.estrategia || "*Sin notas*", inline: false },
         { name: "📝 Composición", value: `\`\`\`\n${(t.rawComposicion || "").slice(0, 900)}\n\`\`\``, inline: false },
       )
       .setFooter({ text: `Creada por ${t.authorTag}` });
@@ -437,7 +487,7 @@ async function handle(interaction) {
       modal.addComponents(
         new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("tipo").setLabel("Tipo").setStyle(TextInputStyle.Short).setValue(t.tipo).setRequired(true)),
         new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("composicion").setLabel("Composición").setStyle(TextInputStyle.Paragraph).setValue((t.rawComposicion || "").slice(0, 4000)).setRequired(true)),
-        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("estrategia").setLabel("Estrategia").setStyle(TextInputStyle.Paragraph).setValue(t.estrategia || "").setRequired(false)),
+        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("estrategia").setLabel("Notas").setStyle(TextInputStyle.Paragraph).setValue(t.estrategia || "").setRequired(false)),
       );
       return interaction.showModal(modal);
     }
@@ -466,12 +516,21 @@ async function handle(interaction) {
   // ── BUTTONS: Anotarse / Desanotarse ──────────────────────
   if (interaction.isButton()) {
     const { customId, message, user } = interaction;
-    const VALID = ["signup_tank", "signup_heal", "signup_dps", "signup_sup", "signup_out"];
+    const VALID = ["signup_tank", "signup_heal", "signup_dps", "signup_sup", "signup_out", "signup_invite"];
     if (!VALID.includes(customId)) return;
 
     const compo = compos[message.id];
     if (!compo)
       return interaction.reply({ content: "❌ Composición no disponible.", ephemeral: true });
+
+    // Invites In-game
+    if (customId === "signup_invite") {
+      if (compo.authorId !== user.id) return interaction.reply({ content: "❌ Sólo el creador de la party puede solicitar los comandos in-game.", ephemeral: true });
+      let igns = [];
+      for (const arr of Object.values(compo.signups)) for (const s of arr) if (s && s.ign) igns.push(s.ign);
+      if (!igns.length) return interaction.reply({ content: "⚠️ No hay nadie anotado.", ephemeral: true });
+      return interaction.reply({ content: `🎮 **Comandos de Grupo:**\n\`\`\`text\n${igns.map(i=>`/invite ${i}`).join("\n")}\n\`\`\`\n*Copia el cuadro y pégalo en el chat de tu partida para invitarlos al instante.*`, ephemeral: true });
+    }
 
     // Desanotarse
     if (customId === "signup_out") {
