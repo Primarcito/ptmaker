@@ -6,24 +6,24 @@ const {
   StringSelectMenuBuilder, ModalBuilder,
   TextInputBuilder, TextInputStyle,
 } = require("discord.js");
-const fs   = require("fs");
+const fs = require("fs");
 const fsPromises = require("fs").promises;
 const path = require("path");
 
 // ════════════════════════════════════════════════════════════
 //  PERSISTENCIA
 // ════════════════════════════════════════════════════════════
-const DATA_DIR       = path.join(process.cwd(), "data");
+const DATA_DIR = path.join(process.cwd(), "data");
 const TEMPLATES_FILE = path.join(DATA_DIR, "templates.json");
-const COMPOS_FILE    = path.join(DATA_DIR, "compos.json");
+const COMPOS_FILE = path.join(DATA_DIR, "compos.json");
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
 let templates = {};
-let compos    = {};
+let compos = {};
 
-try { 
-  templates = JSON.parse(fs.readFileSync(TEMPLATES_FILE, "utf8")); 
+try {
+  templates = JSON.parse(fs.readFileSync(TEMPLATES_FILE, "utf8"));
 } catch (err) {
   if (err.code !== "ENOENT") {
     console.error("FATAL: Error al leer templates.json. Verifica si el archivo está corrupto:", err);
@@ -31,8 +31,8 @@ try {
   }
 }
 
-try { 
-  compos = JSON.parse(fs.readFileSync(COMPOS_FILE, "utf8")); 
+try {
+  compos = JSON.parse(fs.readFileSync(COMPOS_FILE, "utf8"));
 } catch (err) {
   if (err.code !== "ENOENT") {
     console.error("FATAL: Error al leer compos.json. Verifica si el archivo está corrupto:", err);
@@ -41,7 +41,7 @@ try {
 }
 
 const saveTemplates = () => fsPromises.writeFile(TEMPLATES_FILE, JSON.stringify(templates, null, 2)).catch(console.error);
-const saveCompos    = () => fsPromises.writeFile(COMPOS_FILE,    JSON.stringify(compos,    null, 2)).catch(console.error);
+const saveCompos = () => fsPromises.writeFile(COMPOS_FILE, JSON.stringify(compos, null, 2)).catch(console.error);
 
 // ════════════════════════════════════════════════════════════
 //  MAP: Dropdown pendiente
@@ -54,16 +54,16 @@ const pendingDropdowns = new Map();
 // ════════════════════════════════════════════════════════════
 //  CONFIG
 // ════════════════════════════════════════════════════════════
-const ADMIN_ROLES      = process.env.ADMIN_ROLES ? process.env.ADMIN_ROLES.split(",") : ["852823068475785217", "983987481961717782"];
-const ZVZ_ROLE         = process.env.ZVZ_ROLE || "1468028696148312189";
-const PVPPVE_ROLE      = process.env.PVPPVE_ROLE || "1493273036369952860";
+const ADMIN_ROLES = process.env.ADMIN_ROLES ? process.env.ADMIN_ROLES.split(",") : ["852823068475785217", "983987481961717782"];
+const ZVZ_ROLE = process.env.ZVZ_ROLE || "1468028696148312189";
+const PVPPVE_ROLE = process.env.PVPPVE_ROLE || "1493273036369952860";
 const ALLOWED_CHANNELS = process.env.ALLOWED_CHANNELS ? process.env.ALLOWED_CHANNELS.split(",") : ["1402080321150652426", "1423098812938981449", "1471843096018026669"];
 
 // ════════════════════════════════════════════════════════════
 //  PARSER
 // ════════════════════════════════════════════════════════════
 function parseComposition(input) {
-  const slots  = { tank: 0, healer: 0, dps: 0, support: 0 };
+  const slots = { tank: 0, healer: 0, dps: 0, support: 0 };
   const builds = { tank: [], healer: [], dps: [], support: [] };
   if (!input) return { slots, builds };
 
@@ -71,10 +71,10 @@ function parseComposition(input) {
   for (const line of input.split("\n").map(l => l.trim()).filter(Boolean)) {
     const lo = line.toLowerCase();
     let isHeader = false;
-    if      (lo.startsWith("tank") || lo === "tanque")    { cur = "tank";    isHeader = true; }
-    else if (lo.startsWith("heal"))                        { cur = "healer";  isHeader = true; }
-    else if (lo.startsWith("dps") || lo.startsWith("dam")){ cur = "dps";     isHeader = true; }
-    else if (lo.startsWith("sup") || lo.startsWith("sor")){ cur = "support"; isHeader = true; }
+    if (lo.startsWith("tank") || lo === "tanque") { cur = "tank"; isHeader = true; }
+    else if (lo.startsWith("heal")) { cur = "healer"; isHeader = true; }
+    else if (lo.startsWith("dps") || lo.startsWith("dam")) { cur = "dps"; isHeader = true; }
+    else if (lo.startsWith("sup") || lo.startsWith("sor")) { cur = "support"; isHeader = true; }
 
     if (isHeader) { if (slots[cur] === 0) slots[cur] = 1; continue; }
     if (cur) {
@@ -91,7 +91,7 @@ function parseComposition(input) {
 // ════════════════════════════════════════════════════════════
 function buildCompoEmbed(compo) {
   const { nombre, tipo, estrategia, slots, builds, signups, authorTag } = compo;
-  const totalSlots  = Object.values(slots).reduce((a, b) => a + b, 0);
+  const totalSlots = Object.values(slots).reduce((a, b) => a + b, 0);
   const totalFilled = Object.values(signups).reduce(
     (acc, arr) => acc + (Array.isArray(arr) ? arr.filter(Boolean).length : 0), 0
   );
@@ -101,24 +101,24 @@ function buildCompoEmbed(compo) {
     .setColor(isFull ? 0x57C457 : 0xE05B5B)
     .setTitle(`${isFull ? "✅" : "🗺️"} ${nombre}`)
     .addFields(
-      { name: "📌 Tipo",  value: tipo, inline: true },
+      { name: "📌 Tipo", value: tipo, inline: true },
       { name: "👥 Slots totales", value: `${totalFilled}/${totalSlots}`, inline: true }
     );
 
   let rosterDesc = "";
 
   for (const { key, emoji, label } of [
-    { key: "tank",    emoji: "🛡️", label: "Tank"    },
-    { key: "healer",  emoji: "🚑", label: "Healer"  },
-    { key: "dps",     emoji: "🔥", label: "DPS"     },
+    { key: "tank", emoji: "🛡️", label: "Tank" },
+    { key: "healer", emoji: "🚑", label: "Healer" },
+    { key: "dps", emoji: "🔥", label: "DPS" },
     { key: "support", emoji: "✨", label: "Support" },
   ]) {
     const max = slots[key] || 0;
     if (max === 0) continue;
-    const arr        = signups[key] || [];
+    const arr = signups[key] || [];
     const roleBuilds = builds?.[key] || [];
-    let   filled     = 0;
-    const lines      = [];
+    let filled = 0;
+    const lines = [];
     for (let i = 0; i < max; i++) {
       const u = arr[i];
       if (u) filled++;
@@ -138,12 +138,12 @@ function buildCompoEmbed(compo) {
 function buildCompoButtons(compo) {
   const { slots, signups } = compo;
   const filled = (r) => (signups[r] || []).filter(Boolean).length;
-  const full   = (r) => filled(r) >= (slots[r] ?? 0);
-  const btns   = [];
+  const full = (r) => filled(r) >= (slots[r] ?? 0);
+  const btns = [];
 
-  if ((slots.tank    ?? 0) > 0) btns.push(new ButtonBuilder().setCustomId("signup_tank").setLabel(`🛡️ Tank (${filled("tank")}/${slots.tank})`).setStyle(ButtonStyle.Primary).setDisabled(full("tank")));
-  if ((slots.healer  ?? 0) > 0) btns.push(new ButtonBuilder().setCustomId("signup_heal").setLabel(`🚑 Healer (${filled("healer")}/${slots.healer})`).setStyle(ButtonStyle.Primary).setDisabled(full("healer")));
-  if ((slots.dps     ?? 0) > 0) btns.push(new ButtonBuilder().setCustomId("signup_dps").setLabel(`🔥 DPS (${filled("dps")}/${slots.dps})`).setStyle(ButtonStyle.Primary).setDisabled(full("dps")));
+  if ((slots.tank ?? 0) > 0) btns.push(new ButtonBuilder().setCustomId("signup_tank").setLabel(`🛡️ Tank (${filled("tank")}/${slots.tank})`).setStyle(ButtonStyle.Primary).setDisabled(full("tank")));
+  if ((slots.healer ?? 0) > 0) btns.push(new ButtonBuilder().setCustomId("signup_heal").setLabel(`🚑 Healer (${filled("healer")}/${slots.healer})`).setStyle(ButtonStyle.Primary).setDisabled(full("healer")));
+  if ((slots.dps ?? 0) > 0) btns.push(new ButtonBuilder().setCustomId("signup_dps").setLabel(`🔥 DPS (${filled("dps")}/${slots.dps})`).setStyle(ButtonStyle.Primary).setDisabled(full("dps")));
   if ((slots.support ?? 0) > 0) btns.push(new ButtonBuilder().setCustomId("signup_sup").setLabel(`✨ Support (${filled("support")}/${slots.support})`).setStyle(ButtonStyle.Primary).setDisabled(full("support")));
   btns.push(new ButtonBuilder().setCustomId("signup_out").setLabel("✗ Desanotarme").setStyle(ButtonStyle.Danger));
 
@@ -202,7 +202,7 @@ client.on("interactionCreate", async (interaction) => {
     try {
       if (interaction.replied || interaction.deferred) await interaction.followUp(msg);
       else await interaction.reply(msg);
-    } catch {}
+    } catch { }
   }
 });
 
@@ -244,7 +244,7 @@ async function handle(interaction) {
     // /pt-lanzar
     if (interaction.commandName === "pt-lanzar") {
       const tName = interaction.options.getString("plantilla");
-      const t     = templates[tName];
+      const t = templates[tName];
       if (!t) return interaction.reply({ content: `❌ Plantilla **${tName}** no encontrada.`, ephemeral: true });
 
       const tLo = t.tipo.toLowerCase();
@@ -255,12 +255,12 @@ async function handle(interaction) {
 
       const compoData = {
         nombre: t.nombre, tipo: t.tipo,
-        slots:  { ...t.slots }, builds: { ...t.builds },
+        slots: { ...t.slots }, builds: { ...t.builds },
         estrategia: t.estrategia,
         signups: {
-          tank:    Array(t.slots.tank    || 0).fill(null),
-          healer:  Array(t.slots.healer  || 0).fill(null),
-          dps:     Array(t.slots.dps     || 0).fill(null),
+          tank: Array(t.slots.tank || 0).fill(null),
+          healer: Array(t.slots.healer || 0).fill(null),
+          dps: Array(t.slots.dps || 0).fill(null),
           support: Array(t.slots.support || 0).fill(null),
         },
         authorId: interaction.user.id, authorTag: interaction.user.username,
@@ -273,21 +273,33 @@ async function handle(interaction) {
         fetchReply: true,
       });
 
-      const thread = await msg.startThread({
-        name: `Anotarse: ${t.nombre}`.slice(0, 100),
-        autoArchiveDuration: 1440
-      });
+      let targetId = msg.id;
 
-      const threadMsg = await thread.send({
-        content: "👇 **Elige tu rol usando estos botones:**",
-        components: buildCompoButtons(compoData)
-      });
+      try {
+        const thread = await msg.startThread({
+          name: `Anotarse: ${t.nombre}`.slice(0, 100),
+          autoArchiveDuration: 1440
+        });
+
+        const threadMsg = await thread.send({
+          content: "👇 **Elige tu rol usando estos botones:**",
+          components: buildCompoButtons(compoData)
+        });
+
+        compoData.threadMsgId = threadMsg.id;
+        targetId = threadMsg.id;
+      } catch (err) {
+        console.error("No se pudo crear el hilo, aplicando fallback a botones en parent.", err.message);
+        await msg.edit({
+          content: `📋 **${interaction.user.username}** publicó **${t.nombre}**. ¡Anotate usando los botones de abajo!`,
+          components: buildCompoButtons(compoData)
+        });
+      }
 
       compoData.parentMsgId = msg.id;
-      compoData.threadMsgId = threadMsg.id;
-      compoData.channelId   = interaction.channelId;
+      compoData.channelId = interaction.channelId;
 
-      compos[threadMsg.id] = compoData;
+      compos[targetId] = compoData;
       saveCompos();
       return;
     }
@@ -316,12 +328,12 @@ async function handle(interaction) {
 
   // ── MODAL: Crear plantilla ────────────────────────────────
   if (interaction.isModalSubmit() && interaction.customId === "modal_compo") {
-    const nombre     = interaction.fields.getTextInputValue("nombre").trim();
-    const tipo       = interaction.fields.getTextInputValue("tipo").trim();
-    const composRaw  = interaction.fields.getTextInputValue("composicion").trim();
+    const nombre = interaction.fields.getTextInputValue("nombre").trim();
+    const tipo = interaction.fields.getTextInputValue("tipo").trim();
+    const composRaw = interaction.fields.getTextInputValue("composicion").trim();
     const estrategia = interaction.fields.getTextInputValue("estrategia").trim();
-    const hasAdmin   = interaction.member.roles.cache.some(r => ADMIN_ROLES.includes(r.id));
-    const tLo        = tipo.toLowerCase();
+    const hasAdmin = interaction.member.roles.cache.some(r => ADMIN_ROLES.includes(r.id));
+    const tLo = tipo.toLowerCase();
 
     if (tLo.includes("zvz") && !interaction.member.roles.cache.has(ZVZ_ROLE) && !hasAdmin)
       return interaction.reply({ content: "❌ Sin rol para crear ZvZ.", ephemeral: true });
@@ -344,9 +356,9 @@ async function handle(interaction) {
 
   // ── MODAL: Editar plantilla ───────────────────────────────
   if (interaction.isModalSubmit() && interaction.customId.startsWith("dash_modal_edit_")) {
-    const tName      = interaction.customId.replace("dash_modal_edit_", "");
-    const tipo       = interaction.fields.getTextInputValue("tipo").trim();
-    const composRaw  = interaction.fields.getTextInputValue("composicion").trim();
+    const tName = interaction.customId.replace("dash_modal_edit_", "");
+    const tipo = interaction.fields.getTextInputValue("tipo").trim();
+    const composRaw = interaction.fields.getTextInputValue("composicion").trim();
     const estrategia = interaction.fields.getTextInputValue("estrategia").trim();
     const { slots, builds } = parseComposition(composRaw);
 
@@ -361,7 +373,7 @@ async function handle(interaction) {
   // ── SELECT: Dashboard ─────────────────────────────────────
   if (interaction.isStringSelectMenu() && interaction.customId === "dash_select_template") {
     const tName = interaction.values[0];
-    const t     = templates[tName];
+    const t = templates[tName];
     if (!t) return interaction.update({ content: "❌ No encontrada.", components: [] });
 
     const totalSlots = Object.values(t.slots).reduce((a, b) => a + b, 0);
@@ -369,9 +381,9 @@ async function handle(interaction) {
       .setColor(0x5865F2)
       .setTitle(`📁 ${t.nombre}`)
       .addFields(
-        { name: "📌 Tipo",        value: t.tipo,                                                      inline: true  },
-        { name: "👥 Slots",       value: String(totalSlots),                                           inline: true  },
-        { name: "📋 Estrategia",  value: t.estrategia || "*Sin estrategia*",                           inline: false },
+        { name: "📌 Tipo", value: t.tipo, inline: true },
+        { name: "👥 Slots", value: String(totalSlots), inline: true },
+        { name: "📋 Estrategia", value: t.estrategia || "*Sin estrategia*", inline: false },
         { name: "📝 Composición", value: `\`\`\`\n${(t.rawComposicion || "").slice(0, 900)}\n\`\`\``, inline: false },
       )
       .setFooter({ text: `Creada por ${t.authorTag}` });
@@ -460,11 +472,11 @@ async function handle(interaction) {
       if (!removed)
         return interaction.reply({ content: "⚠️ No estás en ningún slot.", ephemeral: true });
       saveCompos();
-      if (compo.parentMsgId) {
-         await interaction.update({ components: buildCompoButtons(compo) });
-         await updateParentEmbed(interaction.client, compo);
+      if (compo.threadMsgId) {
+        await interaction.update({ components: buildCompoButtons(compo) });
+        await updateParentEmbed(interaction.client, compo);
       } else {
-         await interaction.update({ embeds: [buildCompoEmbed(compo)], components: buildCompoButtons(compo) });
+        await interaction.update({ embeds: [buildCompoEmbed(compo)], components: buildCompoButtons(compo) });
       }
       await interaction.followUp({ content: "↩️ Desanotado correctamente.", ephemeral: true });
       return;
@@ -490,7 +502,7 @@ async function handle(interaction) {
       if (buildDef) {
         if (buildDef.includes("/")) {
           buildDef.split("/").forEach(b => {
-             options.push({ label: b.trim().slice(0, 100), value: `${idx}|${b.trim()}`.slice(0, 100), emoji: "🎯" });
+            options.push({ label: b.trim().slice(0, 100), value: `${idx}|${b.trim()}`.slice(0, 100), emoji: "🎯" });
           });
         } else {
           options.push({ label: buildDef.slice(0, 100), value: `${idx}|${buildDef}`.slice(0, 100), emoji: "🎯" });
@@ -514,7 +526,7 @@ async function handle(interaction) {
       // Guardamos la interacción para editar el cartel cuando el select responda.
       await interaction.deferUpdate();
       pendingDropdowns.set(user.id, { origInteraction: interaction, msgId: message.id });
-      
+
       // Limpiar automáticamente después de 14 minutos para evitar memory leak
       setTimeout(() => {
         pendingDropdowns.delete(user.id);
@@ -544,11 +556,11 @@ async function handle(interaction) {
     }
     compo.signups[role][targetIdx] = { userId: user.id, ign: user.username, build: targetBuild };
     saveCompos();
-    if (compo.parentMsgId) {
-       await interaction.update({ components: buildCompoButtons(compo) });
-       await updateParentEmbed(interaction.client, compo);
+    if (compo.threadMsgId) {
+      await interaction.update({ components: buildCompoButtons(compo) });
+      await updateParentEmbed(interaction.client, compo);
     } else {
-       await interaction.update({ embeds: [buildCompoEmbed(compo)], components: buildCompoButtons(compo) });
+      await interaction.update({ embeds: [buildCompoEmbed(compo)], components: buildCompoButtons(compo) });
     }
     await interaction.followUp({ content: `✅ Anotado como **${role.toUpperCase()}**.`, ephemeral: true });
     return;
@@ -558,9 +570,9 @@ async function handle(interaction) {
   if (interaction.isStringSelectMenu() && interaction.customId.startsWith("pick_")) {
     // customId: pick_MSGID_role  (snowflakes son solo números, sin _)
     const withoutPrefix = interaction.customId.slice("pick_".length); // "MSGID_role"
-    const firstUnder    = withoutPrefix.indexOf("_");
-    const msgId         = withoutPrefix.slice(0, firstUnder);
-    const role          = withoutPrefix.slice(firstUnder + 1);
+    const firstUnder = withoutPrefix.indexOf("_");
+    const msgId = withoutPrefix.slice(0, firstUnder);
+    const role = withoutPrefix.slice(firstUnder + 1);
     const [strIdx, ...restBuild] = interaction.values[0].split("|");
     const selectedIndex = parseInt(strIdx, 10);
     const exactBuild = restBuild.join("|") || undefined;
@@ -592,7 +604,7 @@ async function handle(interaction) {
     if (pending && pending.msgId === msgId) {
       pendingDropdowns.delete(interaction.user.id);
       try {
-        if (compo.parentMsgId) {
+        if (compo.threadMsgId) {
           await pending.origInteraction.editReply({ components: buildCompoButtons(compo) });
           await updateParentEmbed(interaction.client, compo);
         } else {
