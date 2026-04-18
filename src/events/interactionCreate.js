@@ -323,6 +323,7 @@ module.exports = {
 
         // ── Desanotarse ──
         if (customId === "signup_out") {
+          await interaction.deferUpdate();
           let removed = false;
           for (const role of Object.keys(compo.signups)) {
             const idx = compo.signups[role].findIndex((s) => s && s.userId === user.id);
@@ -333,11 +334,11 @@ module.exports = {
           }
 
           if (!removed) {
-            return interaction.reply({ content: "❌ No estás anotado en esta compo.", ephemeral: true });
+            return interaction.followUp({ content: "❌ No estás anotado en esta compo.", ephemeral: true });
           }
 
           CompoStore.save(message.id, compo);
-          await interaction.update({ embeds: [buildCompoEmbed(compo)], components: buildCompoButtons(compo) });
+          await interaction.editReply({ embeds: [buildCompoEmbed(compo)], components: buildCompoButtons(compo) });
           await interaction.followUp({ content: "✅ Te has desanotado de la compo.", ephemeral: true });
           return;
         }
@@ -394,7 +395,7 @@ module.exports = {
         compo.signups[role][firstFree] = { userId: user.id, ign: user.username };
         CompoStore.save(message.id, compo);
 
-        await interaction.message.edit({ embeds: [buildCompoEmbed(compo)], components: buildCompoButtons(compo) });
+        await interaction.editReply({ embeds: [buildCompoEmbed(compo)], components: buildCompoButtons(compo) });
         await interaction.followUp({
           content: `✅ <@${user.id}>, te has anotado como **${role.toUpperCase()}** con éxito.`,
           ephemeral: true,
