@@ -1,8 +1,12 @@
+const path = require("path");
 const TemplateStore = require("../utils/templateStore");
 const CompoStore = require("../utils/compoStore");
 const { buildCompoEmbed, buildCompoButtons } = require("../utils/embeds");
 const { parseComposition } = require("../utils/parsers");
 const { StringSelectMenuBuilder, ActionRowBuilder } = require("discord.js");
+
+const DB_TEMPLATES = path.join(process.cwd(), "data", "templates.json");
+const DB_COMPOS = path.join(process.cwd(), "data", "compos.json");
 
 module.exports = {
   name: "interactionCreate",
@@ -110,16 +114,22 @@ module.exports = {
       const { EmbedBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder } = require("discord.js");
 
       // Calculate totals
+      const totalFilled = Object.values(template.signups || {}).reduce((acc, arr) => acc + (Array.isArray(arr) ? arr.filter(s => s !== null).length : 0), 0);
       const totalSlots = Object.values(template.slots).reduce((a, b) => a + b, 0);
 
       const embed = new EmbedBuilder()
-        .setColor(0x3498DB)
-        .setTitle(`📂 Plantilla: ${template.nombre}`)
+        .setColor(0xEE3333)
+        .setTitle(`🗺️ ${template.nombre}`)
+        .setDescription(`**📋 Composición del grupo (${totalFilled}/${totalSlots} slots)**`)
         .addFields(
-           { name: "Tipo", value: template.tipo, inline: true },
-           { name: "Slots Totales", value: `${totalSlots}`, inline: true },
-           { name: "Estrategia", value: template.estrategia || "*Sin estrategia*", inline: false },
+          { name: "📌 Tipo", value: template.tipo || "PvP", inline: true },
+          { name: "👥 Slots", value: `${totalFilled}/${totalSlots}`, inline: true },
+          { name: "Estrategia", value: template.estrategia || "*Sin estrategia*", inline: false }
         );
+
+      // Añadir un tracker de actualización en el footer para depurar
+      const updateId = Math.random().toString(36).substring(7).toUpperCase();
+      embed.setFooter({ text: `🌍 ${template.tipo} · publicado por ${template.authorTag || "desconocido"} · v${updateId}` });
 
       let rawText = template.rawComposicion;
       if (!rawText) {
@@ -285,20 +295,22 @@ module.exports = {
         }
       }
 
-      signupsArr[selectedIndex] = { userId: interaction.user.id, ign: interaction.user.username };
+      // Actualización definitiva: mutar y re-asignar
+      compo.signups[role][selectedIndex] = { userId: interaction.user.id, ign: interaction.user.username };
+      compo.signups = { ...compo.signups }; // Forzar cambio de referencia
+      
       CompoStore.save(msgId, compo);
 
       // Actualizar el cartel principal
       try {
         const mainMessage = await interaction.channel.messages.fetch(msgId);
         if (mainMessage) {
-          await mainMessage.edit({ 
-            embeds: [buildCompoEmbed(compo)], 
-            components: buildCompoButtons(compo) 
-          });
+          const finalEmbed = buildCompoEmbed(compo);
+          const finalButtons = buildCompoButtons(compo);
+          await mainMessage.edit({ embeds: [finalEmbed], components: finalButtons });
         }
       } catch (e) {
-        console.error("Error editando cartel:", e);
+        console.error("Error al actualizar cartel:", e);
       }
       
       await interaction.editReply({ 
@@ -393,9 +405,13 @@ module.exports = {
 
         const firstFree = freeIndexes[0];
         compo.signups[role][firstFree] = { userId: user.id, ign: user.username };
+        compo.signups = { ...compo.signups };
+
         CompoStore.save(message.id, compo);
 
-        await interaction.editReply({ embeds: [buildCompoEmbed(compo)], components: buildCompoButtons(compo) });
+        const freshEmbed = buildCompoEmbed(compo);
+        const freshButtons = buildCompoButtons(compo);
+        await interaction.editReply({ embeds: [freshEmbed], components: freshButtons });
         await interaction.followUp({
           content: `✅ <@${user.id}>, te has anotado como **${role.toUpperCase()}** con éxito.`,
           ephemeral: true,
