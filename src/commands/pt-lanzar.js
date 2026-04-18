@@ -5,7 +5,7 @@ const { buildCompoEmbed, buildCompoButtons } = require("../utils/embeds");
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName("pt")
+    .setName("pt-lanzar")
     .setDescription("Lanza una composición previamente guardada como plantilla")
     .addStringOption((o) =>
       o

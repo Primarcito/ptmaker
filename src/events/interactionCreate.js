@@ -27,9 +27,9 @@ module.exports = {
       return;
     }
 
-    // ── Autocomplete para el comando /pt ───────────────────────────
+    // ── Autocomplete para el comando /pt-lanzar y /pt-dashboard ────────────────
     if (interaction.isAutocomplete()) {
-      if (interaction.commandName === "pt") {
+      if (interaction.commandName === "pt-lanzar" || interaction.commandName === "pt-dashboard") {
         const focusedValue = interaction.options.getFocused();
         const templates = TemplateStore.all();
         const choices = Object.keys(templates);
@@ -82,6 +82,7 @@ module.exports = {
         slots,
         builds,
         estrategia,
+        rawComposicion: composicionRaw,
         authorId:  interaction.user.id,
         authorTag: interaction.user.username,
         createdAt: Date.now(),
@@ -94,6 +95,152 @@ module.exports = {
         content: `✅ ¡Plantilla **${nombre}** creada y guardada con éxito! Ahora usa \`/pt\` en el canal respectivo para lanzarla.`,
         ephemeral: true
       });
+      return;
+    }
+
+    // ── Dashboard: Select Template ──────────────────────────────
+    if (interaction.isStringSelectMenu() && interaction.customId === "dash_select_template") {
+      const templateName = interaction.values[0];
+      const template = TemplateStore.get(templateName);
+
+      if (!template) {
+        return interaction.update({ content: "❌ Plantilla no encontrada.", components: [] });
+      }
+
+      const { EmbedBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder } = require("discord.js");
+
+      // Calculate totals
+      const totalSlots = Object.values(template.slots).reduce((a, b) => a + b, 0);
+
+      const embed = new EmbedBuilder()
+        .setColor(0x3498DB)
+        .setTitle(`📂 Plantilla: ${template.nombre}`)
+        .addFields(
+           { name: "Tipo", value: template.tipo, inline: true },
+           { name: "Slots Totales", value: `${totalSlots}`, inline: true },
+           { name: "Estrategia", value: template.estrategia || "*Sin estrategia*", inline: false },
+        );
+
+      let rawText = template.rawComposicion;
+      if (!rawText) {
+         rawText = "";
+         ["tank", "healer", "dps", "support"].forEach(rol => {
+            if(template.slots[rol] > 0) {
+               rawText += rol + "\n";
+               if(template.builds[rol]) {
+                  template.builds[rol].forEach(b => rawText += b + "\n");
+               }
+               rawText += "\n";
+            }
+         });
+      }
+
+      embed.addFields({ name: "Composición RAW", value: `\`\`\`text\n${rawText.slice(0, 1000) || "Vacío"}\n\`\`\``, inline: false });
+
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`dash_btn_edit_${templateName}`).setLabel("✏️ Editar").setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId(`dash_btn_delete_${templateName}`).setLabel("🗑️ Borrar").setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId(`dash_btn_back`).setLabel("⬅️ Volver").setStyle(ButtonStyle.Secondary)
+      );
+
+      await interaction.update({ content: "Detalles de la Plantilla:", embeds: [embed], components: [row] });
+      return;
+    }
+
+    // ── Dashboard: Botones ──────────────────────────────────────
+    if (interaction.isButton() && interaction.customId.startsWith("dash_btn_")) {
+      const parts = interaction.customId.split("_");
+      const action = parts[2]; // edit, delete, back
+      const templateName = parts.slice(3).join("_");
+
+      if (action === "back") {
+        const templates = TemplateStore.all();
+        const templateNames = Object.keys(templates);
+        if (templateNames.length === 0) {
+          return interaction.update({ content: "📂 Tu Bóveda de Plantillas está vacía.", embeds: [], components: [] });
+        }
+        const { StringSelectMenuBuilder, ActionRowBuilder } = require("discord.js");
+        const options = templateNames.map(name => ({
+          label: name.slice(0, 100),
+          description: `Tipo: ${templates[name].tipo}`,
+          value: name,
+          emoji: "📁"
+        })).slice(0, 25);
+        const select = new StringSelectMenuBuilder().setCustomId("dash_select_template").setPlaceholder("Selecciona una plantilla...").addOptions(options);
+        const row = new ActionRowBuilder().addComponents(select);
+        await interaction.update({ content: "## 🎛️ Dashboard de Plantillas\nElige cuál deseas administrar actualmente:", embeds: [], components: [row] });
+        return;
+      }
+
+      if (action === "delete") {
+        TemplateStore.remove(templateName);
+        await interaction.update({ content: `✅ Plantilla **${templateName}** borrada con éxito.`, embeds: [], components: [] });
+        return;
+      }
+
+      if (action === "edit") {
+        const template = TemplateStore.get(templateName);
+        if (!template) return interaction.reply({ content: "❌ No encontrada.", ephemeral: true });
+
+        const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require("discord.js");
+        const modal = new ModalBuilder()
+          .setCustomId(`dash_modal_edit_${templateName}`)
+          .setTitle(`✏️ Editar: ${templateName}`.slice(0, 45));
+
+        let rawText = template.rawComposicion;
+        if (!rawText) {
+          rawText = "";
+          ["tank", "healer", "dps", "support"].forEach(rol => {
+              if(template.slots[rol] > 0) {
+                rawText += rol + "\n";
+                if(template.builds[rol]) {
+                    template.builds[rol].forEach(b => rawText += b + "\n");
+                }
+                rawText += "\n";
+              }
+          });
+        }
+
+        modal.addComponents(
+          new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("tipo").setLabel("Tipo").setStyle(TextInputStyle.Short).setValue(template.tipo).setRequired(true)),
+          new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("composicion").setLabel("Composición (Roles y Armas)").setStyle(TextInputStyle.Paragraph).setValue(rawText.slice(0, 4000)).setRequired(true)),
+          new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("estrategia").setLabel("Estrategia / Notas").setStyle(TextInputStyle.Paragraph).setValue(template.estrategia || "").setRequired(false))
+        );
+
+        await interaction.showModal(modal);
+        return;
+      }
+    }
+
+    // ── Dashboard: Submit Edit Modal ────────────────────────────
+    if (interaction.isModalSubmit() && interaction.customId.startsWith("dash_modal_edit_")) {
+      const templateName = interaction.customId.replace("dash_modal_edit_", "");
+      const tipo = interaction.fields.getTextInputValue("tipo").trim();
+      const composicionRaw = interaction.fields.getTextInputValue("composicion").trim();
+      const estrategia = interaction.fields.getTextInputValue("estrategia").trim();
+
+      const { slots, builds } = parseComposition(composicionRaw);
+      const totalSlots = Object.values(slots).reduce((a, b) => a + b, 0);
+
+      if (totalSlots === 0) {
+        return interaction.reply({ content: "❌ No se detectaron cupos o formato inválido.", ephemeral: true });
+      }
+
+      const existing = TemplateStore.get(templateName) || {};
+      const templateData = {
+        nombre: templateName,
+        tipo,
+        slots,
+        builds,
+        estrategia,
+        rawComposicion: composicionRaw,
+        authorId: interaction.user.id,
+        authorTag: interaction.user.username,
+        createdAt: existing.createdAt || Date.now(),
+      };
+
+      TemplateStore.save(templateName, templateData);
+      await interaction.update({ content: `✅ Plantilla **${templateName}** actualizada correctamente.`, embeds: [], components: [] });
       return;
     }
 
