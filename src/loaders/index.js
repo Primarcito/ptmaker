@@ -1,5 +1,6 @@
 const fs   = require("fs");
 const path = require("path");
+const { REST, Routes } = require("discord.js");
 
 /**
  * Carga todos los comandos de src/commands/ y los registra en client.commands
@@ -8,13 +9,41 @@ async function loadCommands(client) {
   const commandsPath = path.join(__dirname, "../commands");
   const files = fs.readdirSync(commandsPath).filter((f) => f.endsWith(".js"));
 
+  const commandsArray = [];
+
   for (const file of files) {
     const cmd = require(path.join(commandsPath, file));
     if (cmd.data && cmd.execute) {
       client.commands.set(cmd.data.name, cmd);
+      commandsArray.push(cmd.data.toJSON());
       console.log(`  ✅ Comando cargado: /${cmd.data.name}`);
     } else {
       console.warn(`  ⚠️  ${file} no tiene 'data' o 'execute', se omite.`);
+    }
+  }
+
+  // Registrar comandos en la API de Discord
+  if (process.env.DISCORD_TOKEN && process.env.CLIENT_ID) {
+    const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
+    try {
+      console.log(`  ⏳ Registrando ${commandsArray.length} comandos slash en la API de Discord...`);
+      if (process.env.GUILD_ID) {
+        // Registrar localmente en el servidor (instantáneo)
+        await rest.put(
+          Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID),
+          { body: commandsArray }
+        );
+        console.log(`  🌐 Comandos slash listos y registrados en tu servidor.`);
+      } else {
+        // Registrar globalmente
+        await rest.put(
+          Routes.applicationCommands(process.env.CLIENT_ID),
+          { body: commandsArray }
+        );
+        console.log(`  🌐 Comandos slash registrados globalmente.`);
+      }
+    } catch (error) {
+      console.error(`  ❌ Error al registrar comandos slash:`, error);
     }
   }
 }
