@@ -1,53 +1,45 @@
 /**
- * Parsea el campo de slots del modal.
- * Input: "Tank:2 Healer:3 DPS:5 Support:2"
- * Output: { tank: 2, healer: 3, dps: 5, support: 2 }
- */
-function parseSlots(input) {
-  const slots = { tank: 0, healer: 0, dps: 0, support: 0 };
-  const regex = /(\w+)\s*:\s*(\d+)/gi;
-  let match;
-
-  while ((match = regex.exec(input)) !== null) {
-    const key = match[1].toLowerCase();
-    const val = parseInt(match[2], 10);
-
-    if (key.startsWith("tank") || key === "tanque")         slots.tank    = val;
-    else if (key.startsWith("heal") || key === "healer")     slots.healer  = val;
-    else if (key.startsWith("dps") || key.startsWith("dam")) slots.dps     = val;
-    else if (key.startsWith("sup") || key.startsWith("sor")) slots.support = val;
-  }
-
-  return slots;
-}
-
-/**
- * Parsea el campo de builds del modal.
+ * Parsea el campo de composición libre.
  * Input:
- *   "Tank: Heavy Mace
- *    Healer: Hallowfall
- *    DPS: Halberd
- *    Support: Locus Staff"
- * Output: { tank: "Heavy Mace", healer: "Hallowfall", ... }
+ *   "Tank\nIncubo\nMaza\nHealer\nCaido"
+ * Output:
+ *   { slots: { tank: 2, healer: 1, ... }, builds: { tank: ["Incubo", "Maza"], healer: ["Caido"], ... } }
  */
-function parseBuilds(input) {
-  const builds = { tank: "", healer: "", dps: "", support: "" };
-  if (!input) return builds;
+function parseComposition(input) {
+  const slots = { tank: 0, healer: 0, dps: 0, support: 0 };
+  const builds = { tank: [], healer: [], dps: [], support: [] };
+  
+  if (!input) return { slots, builds };
 
-  for (const line of input.split("\n")) {
-    const colonIdx = line.indexOf(":");
-    if (colonIdx === -1) continue;
+  let currentRole = null;
+  const lines = input.split("\n").map(l => l.trim()).filter(Boolean);
 
-    const key   = line.slice(0, colonIdx).trim().toLowerCase();
-    const value = line.slice(colonIdx + 1).trim();
+  for (const line of lines) {
+    const lower = line.toLowerCase();
+    let isHeader = false;
 
-    if (key.startsWith("tank") || key === "tanque")          builds.tank    = value;
-    else if (key.startsWith("heal"))                          builds.healer  = value;
-    else if (key.startsWith("dps") || key.startsWith("dam")) builds.dps     = value;
-    else if (key.startsWith("sup") || key.startsWith("sor")) builds.support = value;
+    if (lower.startsWith("tank") || lower === "tanque") { currentRole = "tank"; isHeader = true; }
+    else if (lower.startsWith("heal")) { currentRole = "healer"; isHeader = true; }
+    else if (lower.startsWith("dps") || lower.startsWith("dam")) { currentRole = "dps"; isHeader = true; }
+    else if (lower.startsWith("sup") || lower.startsWith("sor")) { currentRole = "support"; isHeader = true; }
+
+    if (isHeader) {
+      // Si el rol ya tenía 0 slots al poner solo el header, le garantizamos al menos 1 slot abierto genérico
+      if (slots[currentRole] === 0) slots[currentRole] = 1; 
+      continue;
+    }
+
+    if (currentRole) {
+      // Si el slot actual era genérico (el header de arriba puso 1 sin builds aún), lo reseteamos al añadir el primer build
+      if (slots[currentRole] === 1 && builds[currentRole].length === 0) {
+        slots[currentRole] = 0; 
+      }
+      builds[currentRole].push(line);
+      slots[currentRole]++;
+    }
   }
 
-  return builds;
+  return { slots, builds };
 }
 
 /**
@@ -74,4 +66,4 @@ function normalizeContenido(input) {
     .join(" · ");
 }
 
-module.exports = { parseSlots, parseBuilds, normalizeRol, normalizeContenido };
+module.exports = { parseComposition, normalizeRol, normalizeContenido };

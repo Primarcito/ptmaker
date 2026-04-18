@@ -1,7 +1,7 @@
 const TemplateStore = require("../utils/templateStore");
 const CompoStore = require("../utils/compoStore");
 const { buildCompoEmbed, buildCompoButtons } = require("../utils/embeds");
-const { parseSlots, parseBuilds } = require("../utils/parsers");
+const { parseComposition } = require("../utils/parsers");
 
 module.exports = {
   name: "interactionCreate",
@@ -46,8 +46,7 @@ module.exports = {
     if (interaction.isModalSubmit() && interaction.customId === "modal_compo") {
       const nombre     = interaction.fields.getTextInputValue("nombre").trim();
       const tipo       = interaction.fields.getTextInputValue("tipo").trim();
-      const slotsRaw   = interaction.fields.getTextInputValue("slots").trim();
-      const buildsRaw  = interaction.fields.getTextInputValue("builds").trim();
+      const composicionRaw = interaction.fields.getTextInputValue("composicion").trim();
       const estrategia = interaction.fields.getTextInputValue("estrategia").trim();
 
       // Roles autorizados para CREAR plantillas
@@ -66,8 +65,7 @@ module.exports = {
          return interaction.reply({ content: "❌ No tienes el rol permitido para crear plantillas de PvP o PvE.", ephemeral: true });
       }
 
-      const slots  = parseSlots(slotsRaw);
-      const builds = parseBuilds(buildsRaw);
+      const { slots, builds } = parseComposition(composicionRaw);
 
       const totalSlots = Object.values(slots).reduce((a, b) => a + b, 0);
       if (totalSlots === 0) {
@@ -135,15 +133,21 @@ module.exports = {
       const roleMap = { signup_tank: "tank", signup_heal: "healer", signup_dps: "dps", signup_sup: "support" };
       const role = roleMap[customId];
 
-      // Verificar si ya está anotado en cualquier rol
-      const alreadyIn = Object.values(compo.signups).some((arr) =>
-        arr.some((s) => s.userId === user.id)
-      );
-      if (alreadyIn) {
-        return interaction.reply({
-          content: "❌ Ya estás anotado. Usa **✗ Desanotarme** primero para cambiar de rol.",
-          ephemeral: true,
-        });
+      // Verificar si ya está anotado en cualquier rol y moverlo automáticamente
+      let wasMoved = false;
+      for (const [r, list] of Object.entries(compo.signups)) {
+        const idx = list.findIndex((s) => s.userId === user.id);
+        if (idx !== -1) {
+          if (r === role) {
+            return interaction.reply({
+              content: "❌ Ya estás anotado en este rol.",
+              ephemeral: true,
+            });
+          }
+          list.splice(idx, 1);
+          wasMoved = true;
+          break;
+        }
       }
 
       // Verificar slots disponibles

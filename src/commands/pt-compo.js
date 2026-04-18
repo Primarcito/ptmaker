@@ -32,18 +32,11 @@ module.exports = {
         required: true,
       },
       {
-        id: "slots",
-        label: "Slots por rol",
-        placeholder: "Tank:2 Healer:3 DPS:5 Support:2",
-        style: TextInputStyle.Short,
-        required: true,
-      },
-      {
-        id: "builds",
-        label: "Builds / armas por rol",
-        placeholder: "Tank: Heavy Mace\nHealer: Hallowfall\nDPS: Halberd\nSupport: Locus Staff",
+        id: "composicion",
+        label: "Composición (Roles y Armas)",
+        placeholder: "Tank\nIncubo\nMaza\nHealer\nCaído",
         style: TextInputStyle.Paragraph,
-        required: false,
+        required: true,
       },
       {
         id: "estrategia",

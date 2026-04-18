@@ -60,15 +60,17 @@ function buildCompoEmbed(compo) {
     if (max === 0) continue;
 
     const filled   = signups[key] || [];
-    const build    = builds?.[key] ? ` · ${builds[key]}` : "";
+    const roleBuilds = builds?.[key] || [];
     const lines    = [];
 
     for (let i = 0; i < max; i++) {
-      lines.push(filled[i] ? `✅ **${filled[i].ign}**` : "⬜ *vacío*");
+      const userStr = filled[i] ? `✅ **${filled[i].ign}**` : "⬜ *vacío*";
+      const buildStr = roleBuilds[i] ? ` · *${roleBuilds[i]}*` : "";
+      lines.push(`${userStr}${buildStr}`);
     }
 
     embed.addFields({
-      name:   `${emoji} ${label} (${filled.length}/${max})${build}`,
+      name:   `${emoji} ${label} (${filled.length}/${max})`,
       value:  lines.join("\n"),
       inline: true,
     });
@@ -108,7 +110,7 @@ function buildCompoButtons(compo) {
       new ButtonBuilder()
         .setCustomId("signup_heal")
         .setLabel(`💚 Healer (${signups.healer.length}/${slots.healer})`)
-        .setStyle(ButtonStyle.Success)
+        .setStyle(ButtonStyle.Primary)
         .setDisabled(isFull("healer"))
     );
   }
@@ -118,7 +120,7 @@ function buildCompoButtons(compo) {
       new ButtonBuilder()
         .setCustomId("signup_dps")
         .setLabel(`⚔ DPS (${signups.dps.length}/${slots.dps})`)
-        .setStyle(ButtonStyle.Danger)
+        .setStyle(ButtonStyle.Primary)
         .setDisabled(isFull("dps"))
     );
   }
@@ -128,7 +130,7 @@ function buildCompoButtons(compo) {
       new ButtonBuilder()
         .setCustomId("signup_sup")
         .setLabel(`✨ Support (${signups.support.length}/${slots.support})`)
-        .setStyle(ButtonStyle.Secondary)
+        .setStyle(ButtonStyle.Primary)
         .setDisabled(isFull("support"))
     );
   }
@@ -137,7 +139,7 @@ function buildCompoButtons(compo) {
     new ButtonBuilder()
       .setCustomId("signup_out")
       .setLabel("✗ Desanotarme")
-      .setStyle(ButtonStyle.Secondary)
+      .setStyle(ButtonStyle.Danger)
   );
 
   // Discord permite máx 5 botones por fila
