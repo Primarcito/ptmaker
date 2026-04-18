@@ -287,15 +287,16 @@ module.exports = {
         return interaction.followUp({ content: "❌ Alguien ocupó ese lugar hace un instante. Prueba otro.", ephemeral: true });
       }
 
-      // Auto-moverlo
+      // Auto-moverlo (Limpiar CUALQUIER otro asiento que ocupe el usuario)
       for (const list of Object.values(compo.signups)) {
-        const currentIdx = list.findIndex(s => s && s.userId === interaction.user.id);
-        if (currentIdx !== -1) {
-          list[currentIdx] = null;
-        }
+        if (!Array.isArray(list)) continue;
+        list.forEach((signup, i) => {
+          if (signup && signup.userId === interaction.user.id) {
+            list[i] = null;
+          }
+        });
       }
 
-      // Actualización definitiva: mutar y re-asignar
       compo.signups[role][selectedIndex] = { userId: interaction.user.id, ign: interaction.user.username };
       compo.signups = { ...compo.signups }; // Forzar cambio de referencia
       
@@ -395,6 +396,16 @@ module.exports = {
             components: [new ActionRowBuilder().addComponents(select)],
             ephemeral: true
           });
+        }
+
+        // Auto-moverlo (Limpiar de otros asientos)
+        for (const list of Object.values(compo.signups)) {
+           if (!Array.isArray(list)) continue;
+           list.forEach((signup, i) => {
+             if (signup && signup.userId === user.id) {
+               list[i] = null;
+             }
+           });
         }
 
         const firstFree = freeIndexes[0];
