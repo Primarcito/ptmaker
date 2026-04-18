@@ -146,7 +146,6 @@ function buildCompoButtons(compo) {
   if ((slots.dps ?? 0) > 0) btns.push(new ButtonBuilder().setCustomId("signup_dps").setLabel(`⚔️ DPS (${filled("dps")}/${slots.dps})`).setStyle(ButtonStyle.Primary).setDisabled(full("dps")));
   if ((slots.support ?? 0) > 0) btns.push(new ButtonBuilder().setCustomId("signup_sup").setLabel(`🔮 Support (${filled("support")}/${slots.support})`).setStyle(ButtonStyle.Primary).setDisabled(full("support")));
   btns.push(new ButtonBuilder().setCustomId("signup_out").setLabel("✗ Desanotarme").setStyle(ButtonStyle.Danger));
-  btns.push(new ButtonBuilder().setCustomId("signup_invite").setLabel("🎮 Invites").setStyle(ButtonStyle.Secondary));
 
   const rows = [];
   for (let i = 0; i < btns.length; i += 5)
@@ -182,7 +181,8 @@ client.once("clientReady", async () => {
     new SlashCommandBuilder()
       .setName("pt-lanzar")
       .setDescription("Lanza una composición al canal")
-      .addStringOption(o => o.setName("plantilla").setDescription("Nombre de la plantilla").setRequired(true).setAutocomplete(true)),
+      .addStringOption(o => o.setName("plantilla").setDescription("Nombre de la plantilla").setRequired(true).setAutocomplete(true))
+      .addRoleOption(o => o.setName("rol").setDescription("Rol para etiquetar").setRequired(false)),
     new SlashCommandBuilder()
       .setName("pt-dashboard")
       .setDescription("Panel admin de plantillas"),
@@ -286,8 +286,11 @@ async function handle(interaction) {
         createdAt: Date.now(),
       };
 
+      const rolOpt = interaction.options.getRole("rol");
+      const tagStr = rolOpt ? `${rolOpt} ` : "";
+
       const msg = await interaction.reply({
-        content: `📋 **${interaction.user.username}** publicó **${t.nombre}**.\n🔗 ¡Anotate en el hilo inferior! 👇`,
+        content: `${tagStr}📋 **${interaction.user.username}** publicó **${t.nombre}**.\n🔗 ¡Anotate en el hilo inferior! 👇`,
         embeds: [buildCompoEmbed(compoData)],
         fetchReply: true,
       });
@@ -310,7 +313,7 @@ async function handle(interaction) {
       } catch (err) {
         console.error("No se pudo crear el hilo, aplicando fallback a botones en parent.", err.message);
         await msg.edit({
-          content: `📋 **${interaction.user.username}** publicó **${t.nombre}**. ¡Anotate usando los botones de abajo!`,
+          content: `${tagStr}📋 **${interaction.user.username}** publicó **${t.nombre}**. ¡Anotate usando los botones de abajo!`,
           components: buildCompoButtons(compoData)
         });
       }
@@ -544,21 +547,12 @@ async function handle(interaction) {
   // ── BUTTONS: Anotarse / Desanotarse ──────────────────────
   if (interaction.isButton()) {
     const { customId, message, user } = interaction;
-    const VALID = ["signup_tank", "signup_heal", "signup_dps", "signup_sup", "signup_out", "signup_invite"];
+    const VALID = ["signup_tank", "signup_heal", "signup_dps", "signup_sup", "signup_out"];
     if (!VALID.includes(customId)) return;
 
     const compo = compos[message.id];
     if (!compo)
       return interaction.reply({ content: "❌ Composición no disponible.", ephemeral: true });
-
-    // Invites In-game
-    if (customId === "signup_invite") {
-      if (compo.authorId !== user.id) return interaction.reply({ content: "❌ Sólo el creador de la party puede solicitar los comandos in-game.", ephemeral: true });
-      let igns = [];
-      for (const arr of Object.values(compo.signups)) for (const s of arr) if (s && s.ign) igns.push(s.ign);
-      if (!igns.length) return interaction.reply({ content: "⚠️ No hay nadie anotado.", ephemeral: true });
-      return interaction.reply({ content: `🎮 **Comandos de Grupo:**\n\`\`\`text\n${igns.map(i=>`/invite ${i}`).join("\n")}\n\`\`\`\n*Copia el cuadro y pégalo en el chat de tu partida para invitarlos al instante.*`, ephemeral: true });
-    }
 
     // Desanotarse
     if (customId === "signup_out") {
