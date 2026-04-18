@@ -1,13 +1,12 @@
-const PTStore = require("../utils/ptStore");
+const TemplateStore = require("../utils/templateStore");
 const CompoStore = require("../utils/compoStore");
-const { buildPTEmbed, buildCompoEmbed, buildCompoButtons } = require("../utils/embeds");
-const { parseSlots, parseBuilds, normalizeRol, normalizeContenido } = require("../utils/parsers");
+const { buildCompoEmbed, buildCompoButtons } = require("../utils/embeds");
+const { parseSlots, parseBuilds } = require("../utils/parsers");
 
 module.exports = {
   name: "interactionCreate",
 
   async execute(interaction, client) {
-    // ── Slash Commands ─────────────────────────────────────────────
     if (interaction.isChatInputCommand()) {
       // 1. Validar Canales Permitidos Globales (IDs quemadas)
       const allowedChannelsGlobal = ["1402080321150652426", "1423098812938981449", "1471843096018026669"];
@@ -27,28 +26,23 @@ module.exports = {
       return;
     }
 
-    // ── Modal: /pt ─────────────────────────────────────────────────
-    if (interaction.isModalSubmit() && interaction.customId === "modal_pt") {
-      const data = {
-        ign:       interaction.fields.getTextInputValue("ign").trim(),
-        rol:       normalizeRol(interaction.fields.getTextInputValue("rol")),
-        contenido: normalizeContenido(interaction.fields.getTextInputValue("contenido")),
-        ip:        interaction.fields.getTextInputValue("ip").trim(),
-        build:     interaction.fields.getTextInputValue("build").trim(),
-        updatedAt: Date.now(),
-      };
-
-      PTStore.save(interaction.user.id, data);
-      const embed = buildPTEmbed(data, interaction.user);
-
-      await interaction.reply({
-        content: "✅ ¡PT registrado correctamente!",
-        embeds: [embed],
-      });
+    // ── Autocomplete para el comando /pt ───────────────────────────
+    if (interaction.isAutocomplete()) {
+      if (interaction.commandName === "pt") {
+        const focusedValue = interaction.options.getFocused();
+        const templates = TemplateStore.all();
+        const choices = Object.keys(templates);
+        const filtered = choices
+          .filter((choice) => choice.toLowerCase().includes(focusedValue.toLowerCase()))
+          .slice(0, 25);
+        await interaction.respond(
+          filtered.map((choice) => ({ name: choice, value: choice }))
+        );
+      }
       return;
     }
 
-    // ── Modal: /pt-compo ───────────────────────────────────────────
+    // ── Modal: /pt-compo (Crear Plantilla) ─────────────────────────
     if (interaction.isModalSubmit() && interaction.customId === "modal_compo") {
       const nombre     = interaction.fields.getTextInputValue("nombre").trim();
       const tipo       = interaction.fields.getTextInputValue("tipo").trim();
@@ -56,42 +50,25 @@ module.exports = {
       const buildsRaw  = interaction.fields.getTextInputValue("builds").trim();
       const estrategia = interaction.fields.getTextInputValue("estrategia").trim();
 
-      // Roles autorizados
+      // Roles autorizados para CREAR plantillas
       const zvzRole = "1468028696148312189";
       const pvpPveRole = "1493273036369952860";
       const adminRoles = ["852823068475785217", "983987481961717782"]; // Roles Supremos (bypass)
 
-      // Validación por actividad (ZvZ, PvP, PvE) basada en canales y roles admitidos
       const tipoLower = tipo.toLowerCase();
-      const channelId = interaction.channelId;
-      const testChannel = "1402080321150652426";
-      const pvpPveChannel = "1423098812938981449";
-      const pvpZvzPveChannel = "1471843096018026669";
-
       const hasAdmin = interaction.member.roles.cache.some(r => adminRoles.includes(r.id));
       const hasZvzRole = interaction.member.roles.cache.has(zvzRole) || hasAdmin;
       const hasPvpPveRole = interaction.member.roles.cache.has(pvpPveRole) || hasAdmin;
 
-      if (tipoLower.includes("zvz")) {
-        if (!hasZvzRole) {
-           return interaction.reply({ content: "❌ No tienes el rol permitido para crear composiciones de ZvZ.", ephemeral: true });
-        }
-        if (channelId !== testChannel && channelId !== pvpZvzPveChannel) {
-           return interaction.reply({ content: `❌ Composiciones de ZvZ solo se pueden lanzar en <#${pvpZvzPveChannel}>.`, ephemeral: true });
-        }
-      } else if (tipoLower.includes("pvp") || tipoLower.includes("pve")) {
-        if (!hasPvpPveRole) {
-           return interaction.reply({ content: "❌ No tienes el rol permitido para crear composiciones de PvP o PvE.", ephemeral: true });
-        }
-        if (channelId !== testChannel && channelId !== pvpPveChannel && channelId !== pvpZvzPveChannel) {
-           return interaction.reply({ content: `❌ Composiciones de PvP/PvE solo en <#${pvpPveChannel}> o <#${pvpZvzPveChannel}>.`, ephemeral: true });
-        }
+      if (tipoLower.includes("zvz") && !hasZvzRole) {
+         return interaction.reply({ content: "❌ No tienes el rol permitido para crear plantillas de ZvZ.", ephemeral: true });
+      } else if ((tipoLower.includes("pvp") || tipoLower.includes("pve")) && !hasPvpPveRole) {
+         return interaction.reply({ content: "❌ No tienes el rol permitido para crear plantillas de PvP o PvE.", ephemeral: true });
       }
 
       const slots  = parseSlots(slotsRaw);
       const builds = parseBuilds(buildsRaw);
 
-      // Validar que al menos un slot sea > 0
       const totalSlots = Object.values(slots).reduce((a, b) => a + b, 0);
       if (totalSlots === 0) {
         return interaction.reply({
@@ -100,31 +77,24 @@ module.exports = {
         });
       }
 
-      const compoData = {
+      const templateData = {
         nombre,
         tipo,
         slots,
         builds,
         estrategia,
-        signups: { tank: [], healer: [], dps: [], support: [] },
         authorId:  interaction.user.id,
         authorTag: interaction.user.username,
         createdAt: Date.now(),
       };
 
-      const embed    = buildCompoEmbed(compoData);
-      const buttons  = buildCompoButtons(compoData);
-
-      // Publicar en el canal
-      const msg = await interaction.reply({
-        content: `📋 **${interaction.user.username}** publicó una composición. ¡Anotate!`,
-        embeds: [embed],
-        components: buttons,
-        fetchReply: true,
+      // Guardar plantilla usando su nombre como clave
+      TemplateStore.save(nombre, templateData);
+      
+      await interaction.reply({
+        content: `✅ ¡Plantilla **${nombre}** creada y guardada con éxito! Ahora usa \`/pt\` en el canal respectivo para lanzarla.`,
+        ephemeral: true
       });
-
-      // Guardar usando el ID del mensaje como clave
-      CompoStore.save(msg.id, compoData);
       return;
     }
 
@@ -184,9 +154,8 @@ module.exports = {
         return interaction.reply({ content: "❌ No hay slots disponibles para ese rol.", ephemeral: true });
       }
 
-      // Obtener IGN del PT del jugador (o usar su username)
-      const pt  = PTStore.get(user.id);
-      const ign = pt ? pt.ign : user.username;
+      // Solo usar nombre de Discord ya que se eliminó el sistema estricto de PTs
+      const ign = user.username;
 
       compo.signups[role].push({ userId: user.id, ign });
       CompoStore.save(message.id, compo);
