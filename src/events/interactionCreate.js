@@ -156,8 +156,8 @@ module.exports = {
         }
 
         CompoStore.save(message.id, compo);
-        await message.edit({ embeds: [buildCompoEmbed(compo)], components: buildCompoButtons(compo) });
-        await interaction.reply({ content: "✅ Te has desanotado de la compo.", ephemeral: true });
+        await interaction.update({ embeds: [buildCompoEmbed(compo)], components: buildCompoButtons(compo) });
+        await interaction.followUp({ content: "✅ Te has desanotado de la compo.", ephemeral: true });
         return;
       }
 
@@ -191,10 +191,10 @@ module.exports = {
       compo.signups[role].push({ userId: user.id, ign });
       CompoStore.save(message.id, compo);
 
-      await message.edit({ embeds: [buildCompoEmbed(compo)], components: buildCompoButtons(compo) });
+      await interaction.update({ embeds: [buildCompoEmbed(compo)], components: buildCompoButtons(compo) });
 
       const roleLabels = { tank: "🛡 Tank", healer: "💚 Healer", dps: "⚔ DPS", support: "✨ Support" };
-      await interaction.reply({
+      await interaction.followUp({
         content: `✅ Te has anotado como **${roleLabels[role]}** con el IGN **${ign}**.`,
         ephemeral: true,
       });
