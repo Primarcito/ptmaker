@@ -15,17 +15,6 @@ module.exports = {
         return interaction.reply({ content: "❌ No puedes usar comandos del bot en este canal.", ephemeral: true });
       }
 
-      // 2. Validar Roles Autorizados (solo aplica para crear compos)
-      if (interaction.commandName === "pt-compo" && process.env.ALLOWED_ROLES) {
-        const allowedRoles = process.env.ALLOWED_ROLES.split(",").map(r => r.trim());
-        if (allowedRoles.length > 0) {
-          const hasRole = interaction.member.roles.cache.some(r => allowedRoles.includes(r.id));
-          if (!hasRole) {
-            return interaction.reply({ content: "❌ No tienes permisos de líder para crear composiciones.", ephemeral: true });
-          }
-        }
-      }
-
       const cmd = client.commands.get(interaction.commandName);
       if (!cmd) return;
       try {
@@ -67,19 +56,33 @@ module.exports = {
       const buildsRaw  = interaction.fields.getTextInputValue("builds").trim();
       const estrategia = interaction.fields.getTextInputValue("estrategia").trim();
 
-      // Validación por actividad (ZvZ, PvP, PvE) basada en canales admitidos
+      // Roles autorizados
+      const zvzRole = "1468028696148312189";
+      const pvpPveRole = "1493273036369952860";
+
+      // Validación por actividad (ZvZ, PvP, PvE) basada en canales y roles admitidos
       const tipoLower = tipo.toLowerCase();
       const channelId = interaction.channelId;
       const testChannel = "1402080321150652426";
       const pvpPveChannel = "1423098812938981449";
       const pvpZvzPveChannel = "1471843096018026669";
 
-      if (channelId !== testChannel) {
-        if (tipoLower.includes("zvz") && channelId !== pvpZvzPveChannel) {
-          return interaction.reply({ content: `❌ Composiciones de ZvZ solo se pueden lanzar en <#${pvpZvzPveChannel}>.`, ephemeral: true });
+      const hasZvzRole = interaction.member.roles.cache.has(zvzRole);
+      const hasPvpPveRole = interaction.member.roles.cache.has(pvpPveRole);
+
+      if (tipoLower.includes("zvz")) {
+        if (!hasZvzRole) {
+           return interaction.reply({ content: "❌ No tienes el rol permitido para crear composiciones de ZvZ.", ephemeral: true });
         }
-        if ((tipoLower.includes("pvp") || tipoLower.includes("pve")) && (channelId !== pvpPveChannel && channelId !== pvpZvzPveChannel)) {
-          return interaction.reply({ content: `❌ Composiciones de PvP/PvE solo en <#${pvpPveChannel}> o <#${pvpZvzPveChannel}>.`, ephemeral: true });
+        if (channelId !== testChannel && channelId !== pvpZvzPveChannel) {
+           return interaction.reply({ content: `❌ Composiciones de ZvZ solo se pueden lanzar en <#${pvpZvzPveChannel}>.`, ephemeral: true });
+        }
+      } else if (tipoLower.includes("pvp") || tipoLower.includes("pve")) {
+        if (!hasPvpPveRole) {
+           return interaction.reply({ content: "❌ No tienes el rol permitido para crear composiciones de PvP o PvE.", ephemeral: true });
+        }
+        if (channelId !== testChannel && channelId !== pvpPveChannel && channelId !== pvpZvzPveChannel) {
+           return interaction.reply({ content: `❌ Composiciones de PvP/PvE solo en <#${pvpPveChannel}> o <#${pvpZvzPveChannel}>.`, ephemeral: true });
         }
       }
 
