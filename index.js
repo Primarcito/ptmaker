@@ -75,6 +75,11 @@ try {
 
 const saveConfig = () => fsPromises.writeFile(CONFIG_FILE, JSON.stringify(appConfig, null, 2)).catch(console.error);
 
+if (!appConfig.allowedChannels.includes("1471843096018026669")) {
+  appConfig.allowedChannels.push("1471843096018026669");
+  saveConfig();
+}
+
 const checkAdmin = (member) => appConfig.adminRoles.length === 0 ? member.permissions.has("Administrator") : member.roles.cache.some(r => appConfig.adminRoles.includes(r.id));
 const checkZvZ = (member) => member.roles.cache.some(r => appConfig.zvzRoles.includes(r.id)) || checkAdmin(member);
 const checkPvP = (member) => member.roles.cache.some(r => appConfig.pvpveRoles.includes(r.id)) || checkAdmin(member);
@@ -332,7 +337,7 @@ client.once("clientReady", async () => {
       .setName("pt-repost")
       .setDescription("Repostea un evento activo en otro canal conservando la lista actual de anotados")
       .addStringOption(o => o.setName("evento").setDescription("Selecciona el evento que quieres repostear").setRequired(true).setAutocomplete(true))
-      .addChannelOption(o => o.setName("canal").setDescription("El canal donde repostear").setRequired(true).addChannelTypes(ChannelType.GuildText)),
+      .addChannelOption(o => o.setName("canal").setDescription("El canal donde repostear").setRequired(true).addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)),
     new SlashCommandBuilder()
       .setName("pt-lanzar")
       .setDescription("Lanza una composición al canal")
@@ -652,7 +657,7 @@ async function handle(interaction) {
       if (appConfig.pvpveRoles.length > 0) pvpveMenu.setDefaultRoles(...appConfig.pvpveRoles);
       const row3 = new ActionRowBuilder().addComponents(pvpveMenu);
 
-      const channelsMenu = new ChannelSelectMenuBuilder().setCustomId("config_channels").setPlaceholder("Canales Permitidos").setChannelTypes(ChannelType.GuildText).setMinValues(0).setMaxValues(10);
+      const channelsMenu = new ChannelSelectMenuBuilder().setCustomId("config_channels").setPlaceholder("Canales Permitidos").setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setMinValues(0).setMaxValues(10);
       if (appConfig.allowedChannels.length > 0) channelsMenu.setDefaultChannels(...appConfig.allowedChannels);
       const row4 = new ActionRowBuilder().addComponents(channelsMenu);
 
