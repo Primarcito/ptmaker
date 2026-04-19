@@ -529,9 +529,13 @@ async function handle(interaction) {
         .setPlaceholder("Selecciona un evento activo...")
         .addOptions(options);
 
+      const btnRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("events_deleteall").setLabel("🗑️ Borrar Todos").setStyle(ButtonStyle.Danger)
+      );
+
       return interaction.reply({
         content: `## 🎛️ Eventos Activos (${activeCompos.length})\nSelecciona uno para administrarlo:`,
-        components: [new ActionRowBuilder().addComponents(select)],
+        components: [new ActionRowBuilder().addComponents(select), btnRow],
         ephemeral: true
       });
     }
@@ -781,6 +785,32 @@ async function handle(interaction) {
       return interaction.update({ content: `🗑️ **${tName}** eliminada.`, embeds: [], components: [] });
     }
     return;
+  }
+
+  // ── BUTTONS: Borrar todos los eventos ────────────────────
+  if (interaction.isButton() && interaction.customId === "events_deleteall") {
+    if (!checkAdmin(interaction.member)) return interaction.reply({ content: "❌ Sin permiso.", ephemeral: true });
+    const count = Object.keys(compos).length;
+    if (count === 0) return interaction.update({ content: "📂 No hay eventos activos.", components: [] });
+    return interaction.update({
+      content: `### 🛑 ¿Seguro?\nEsto eliminará **${count} evento(s) activo(s)** permanentemente.`,
+      embeds: [], components: [new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("events_confirmdelall").setLabel(`⚠️ Confirmar borrado (${count})`).setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId("events_canceldelall").setLabel("Cancelar").setStyle(ButtonStyle.Secondary),
+      )]
+    });
+  }
+
+  if (interaction.isButton() && interaction.customId === "events_confirmdelall") {
+    if (!checkAdmin(interaction.member)) return interaction.reply({ content: "❌ Sin permiso.", ephemeral: true });
+    const count = Object.keys(compos).length;
+    compos = {};
+    saveCompos();
+    return interaction.update({ content: `🗑️ **${count} evento(s)** eliminados.`, embeds: [], components: [] });
+  }
+
+  if (interaction.isButton() && interaction.customId === "events_canceldelall") {
+    return interaction.update({ content: "✅ Operación cancelada.", embeds: [], components: [] });
   }
 
   // ── ADMIN PANEL: Botones (ping, movevc, close) ───────────
