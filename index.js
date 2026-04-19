@@ -84,7 +84,7 @@ function parseComposition(input) {
     else if (lo.startsWith("heal")) { cur = "healer"; isHeader = true; }
     else if (lo.startsWith("dps") || lo.startsWith("dam")) { cur = "dps"; isHeader = true; }
     else if (lo.startsWith("sup") || lo.startsWith("sor")) { cur = "support"; isHeader = true; }
-    else if (lo.startsWith("mon") || lo.startsWith("mou")) { cur = "mount"; isHeader = true; }
+    else if (lo.startsWith("mon") || lo.startsWith("mou") || lo.startsWith("bm") || lo === "battle mount") { cur = "mount"; isHeader = true; }
 
     if (isHeader) { if (slots[cur] === 0) slots[cur] = 1; continue; }
     if (cur) {
