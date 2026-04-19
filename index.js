@@ -327,18 +327,19 @@ client.once("clientReady", async () => {
       .addUserOption(o => o.setName("usuario").setDescription("Usuario a expulsar").setRequired(true)),
     new SlashCommandBuilder()
       .setName("pt-setrol")
-      .setDescription("Mueve a un usuario a otro rol en la composición")
-      .addUserOption(o => o.setName("usuario").setDescription("Usuario a mover").setRequired(true))
+      .setDescription("Modifica el rol o el arma de un usuario")
+      .addUserOption(o => o.setName("usuario").setDescription("Usuario a modificar").setRequired(true))
       .addStringOption(o => o.setName("rol")
-        .setDescription("Nuevo rol destino")
-        .setRequired(true)
+        .setDescription("Nuevo rol destino (Opcional)")
+        .setRequired(false)
         .addChoices(
           { name: "🛡️ Tank", value: "tank" },
           { name: "🌿 Healer", value: "healer" },
           { name: "⚔️ DPS", value: "dps" },
           { name: "🔮 Support", value: "support" },
           { name: "🐎 Montura", value: "mount" }
-        )),
+        ))
+      .addStringOption(o => o.setName("arma").setDescription("Nueva arma/clase (Opcional)").setRequired(false)),
   ];
   const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
   // Registrar como Comandos Globales
@@ -565,27 +566,46 @@ async function handle(interaction) {
       
       const targetUser = interaction.options.getUser("usuario");
       const newRole = interaction.options.getString("rol");
-      
-      const emptyIdx = c.signups[newRole].findIndex(s => s === null);
-      if (emptyIdx === -1) return interaction.reply({ content: `❌ No hay espacios disponibles en **${newRole.toUpperCase()}**.`, ephemeral: true });
+      const newArma = interaction.options.getString("arma");
 
+      if (!newRole && !newArma) return interaction.reply({ content: "⚠️ Debes especificar un nuevo rol, una nueva arma o ambos.", ephemeral: true });
+
+      let currentRole = null;
+      let currentIndex = -1;
       let userData = null;
+
       for (const roleKey of Object.keys(c.signups)) {
         const arr = c.signups[roleKey];
         const idx = arr.findIndex(s => s && s.userId === targetUser.id);
         if (idx !== -1) {
+          currentRole = roleKey;
+          currentIndex = idx;
           userData = { ...arr[idx] };
-          arr[idx] = null;
+          break;
         }
       }
       
       if (!userData) return interaction.reply({ content: `⚠️ ${targetUser.username} no está anotado.`, ephemeral: true });
       
-      c.signups[newRole][emptyIdx] = { userId: userData.userId, ign: userData.ign, build: userData.build };
+      const finalRole = newRole || currentRole;
+      const finalBuild = newArma || userData.build;
+
+      if (finalRole !== currentRole) {
+          const emptyIdx = c.signups[finalRole].findIndex(s => s === null);
+          if (emptyIdx === -1) return interaction.reply({ content: `❌ No hay espacios disponibles en **${finalRole.toUpperCase()}**.`, ephemeral: true });
+          c.signups[currentRole][currentIndex] = null;
+          c.signups[finalRole][emptyIdx] = { userId: userData.userId, ign: userData.ign, build: finalBuild };
+      } else {
+          c.signups[currentRole][currentIndex] = { userId: userData.userId, ign: userData.ign, build: finalBuild };
+      }
+
       saveCompos();
       await syncCompoUI(c);
       
-      return interaction.reply({ content: `🔄 **${targetUser.username}** fue movido a **${newRole.toUpperCase()}**.`, ephemeral: false });
+      let replyMsg = `🔄 **${targetUser.username}** actualizado`;
+      if (newRole) replyMsg += ` a **${finalRole.toUpperCase()}**`;
+      if (newArma) replyMsg += ` con arma **${newArma}**`;
+      return interaction.reply({ content: replyMsg + `.`, ephemeral: false });
     }
 
     // /pt-dashboard
