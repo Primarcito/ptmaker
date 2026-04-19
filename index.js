@@ -640,18 +640,21 @@ async function handle(interaction) {
           { name: "💬 Canales Permitidos", value: appConfig.allowedChannels.length ? appConfig.allowedChannels.map(c => `<#${c}>`).join(" ") : "*Todos*", inline: false }
         );
 
-      const row1 = new ActionRowBuilder().addComponents(
-        new RoleSelectMenuBuilder().setCustomId("config_admin").setPlaceholder("Seleccionar Administradores").setMinValues(0).setMaxValues(10)
-      );
-      const row2 = new ActionRowBuilder().addComponents(
-        new RoleSelectMenuBuilder().setCustomId("config_zvz").setPlaceholder("Seleccionar Creadores ZvZ").setMinValues(0).setMaxValues(10)
-      );
-      const row3 = new ActionRowBuilder().addComponents(
-        new RoleSelectMenuBuilder().setCustomId("config_pvpve").setPlaceholder("Seleccionar Creadores PvP/PvE").setMinValues(0).setMaxValues(10)
-      );
-      const row4 = new ActionRowBuilder().addComponents(
-        new ChannelSelectMenuBuilder().setCustomId("config_channels").setPlaceholder("Canales Permitidos").setChannelTypes(ChannelType.GuildText).setMinValues(0).setMaxValues(10)
-      );
+      const adminMenu = new RoleSelectMenuBuilder().setCustomId("config_admin").setPlaceholder("Seleccionar Administradores").setMinValues(0).setMaxValues(10);
+      if (appConfig.adminRoles.length > 0) adminMenu.setDefaultRoles(...appConfig.adminRoles);
+      const row1 = new ActionRowBuilder().addComponents(adminMenu);
+
+      const zvzMenu = new RoleSelectMenuBuilder().setCustomId("config_zvz").setPlaceholder("Seleccionar Creadores ZvZ").setMinValues(0).setMaxValues(10);
+      if (appConfig.zvzRoles.length > 0) zvzMenu.setDefaultRoles(...appConfig.zvzRoles);
+      const row2 = new ActionRowBuilder().addComponents(zvzMenu);
+
+      const pvpveMenu = new RoleSelectMenuBuilder().setCustomId("config_pvpve").setPlaceholder("Seleccionar Creadores PvP/PvE").setMinValues(0).setMaxValues(10);
+      if (appConfig.pvpveRoles.length > 0) pvpveMenu.setDefaultRoles(...appConfig.pvpveRoles);
+      const row3 = new ActionRowBuilder().addComponents(pvpveMenu);
+
+      const channelsMenu = new ChannelSelectMenuBuilder().setCustomId("config_channels").setPlaceholder("Canales Permitidos").setChannelTypes(ChannelType.GuildText).setMinValues(0).setMaxValues(10);
+      if (appConfig.allowedChannels.length > 0) channelsMenu.setDefaultChannels(...appConfig.allowedChannels);
+      const row4 = new ActionRowBuilder().addComponents(channelsMenu);
 
       return interaction.reply({ embeds: [embed], components: [row1, row2, row3, row4], ephemeral: true });
     }
