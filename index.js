@@ -419,6 +419,15 @@ async function handle(interaction) {
       if ((tLo.includes("pvp") || tLo.includes("pve")) && !checkPvP(interaction.member))
         return interaction.reply({ content: "❌ Sin rol para lanzar PvP/PvE.", ephemeral: true });
 
+      // Verificar que no exista una composición activa con el mismo nombre
+      const duplicada = Object.values(compos).find(c => c.nombre === t.nombre);
+      if (duplicada) {
+        return interaction.reply({
+          content: `⚠️ Ya existe una composición activa de **${t.nombre}** (publicada por ${duplicada.authorTag}). Ciérrala desde el botón 🔧 Admin antes de lanzar otra.`,
+          ephemeral: true
+        });
+      }
+
       const compoData = {
         nombre: t.nombre, tipo: t.tipo,
         slots: { ...t.slots }, builds: { ...t.builds }, partyAssignments: t.partyAssignments ? { ...t.partyAssignments } : null,
