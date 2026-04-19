@@ -287,7 +287,6 @@ function buildCompoButtons(compo) {
   if ((slots.mount ?? 0) > 0) btns.push(new ButtonBuilder().setCustomId("signup_mount").setLabel(`🐎 Montura (${filled("mount")}/${slots.mount})`).setStyle(ButtonStyle.Primary).setDisabled(full("mount")));
   
   btns.push(new ButtonBuilder().setCustomId("signup_out").setLabel("✗ Desanotarme").setStyle(ButtonStyle.Danger));
-  btns.push(new ButtonBuilder().setCustomId("signup_admin").setLabel("🔧 Admin").setStyle(ButtonStyle.Secondary));
 
   const rows = [];
   for (let i = 0; i < btns.length; i += 5)
@@ -340,6 +339,9 @@ client.once("clientReady", async () => {
     new SlashCommandBuilder()
       .setName("pt-config")
       .setDescription("Panel de configuración de permisos globales"),
+    new SlashCommandBuilder()
+      .setName("pt-events")
+      .setDescription("Dashboard de eventos activos"),
   ];
   const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
   // Registrar como Comandos Globales
@@ -503,6 +505,35 @@ async function handle(interaction) {
           }
         } catch(e) {}
       }
+    }
+
+    // /pt-events
+    if (interaction.commandName === "pt-events") {
+      if (!hasAdmin) return interaction.reply({ content: "❌ Sin permiso.", ephemeral: true });
+      const activeCompos = Object.entries(compos);
+      if (activeCompos.length === 0) return interaction.reply({ content: "📂 No hay composiciones activas.", ephemeral: true });
+
+      const options = activeCompos.slice(0, 25).map(([msgId, c]) => {
+        const totalInscritos = Object.values(c.signups).reduce((sum, arr) => sum + arr.filter(s => s !== null).length, 0);
+        const totalSlots = Object.values(c.slots).reduce((a, b) => a + b, 0);
+        return {
+          label: `${c.nombre}`.slice(0, 100),
+          description: `${c.tipo} · ${totalInscritos}/${totalSlots} · por ${c.authorTag}`.slice(0, 100),
+          value: msgId,
+          emoji: c.tipo.toLowerCase().includes("zvz") ? "🏰" : c.tipo.toLowerCase().includes("pvp") ? "⚔️" : "🌿"
+        };
+      });
+
+      const select = new StringSelectMenuBuilder()
+        .setCustomId("events_select")
+        .setPlaceholder("Selecciona un evento activo...")
+        .addOptions(options);
+
+      return interaction.reply({
+        content: `## 🎛️ Eventos Activos (${activeCompos.length})\nSelecciona uno para administrarlo:`,
+        components: [new ActionRowBuilder().addComponents(select)],
+        ephemeral: true
+      });
     }
 
     // /pt-config
@@ -1029,80 +1060,70 @@ async function handle(interaction) {
     return interaction.reply({ content: replyMsg + ".", ephemeral: true });
   }
 
-  // ── BUTTONS: Anotarse / Desanotarse / Admin ──────────────
+  // ── SELECT: Eventos activos ───────────────────────────────
+  if (interaction.isStringSelectMenu() && interaction.customId === "events_select") {
+    const msgId = interaction.values[0];
+    const compo = compos[msgId];
+    if (!compo) return interaction.update({ content: "❌ Composición ya no existe.", components: [] });
+
+    let inscritos = [];
+    let totalInscritos = 0;
+    const totalSlots = Object.values(compo.slots).reduce((a, b) => a + b, 0);
+    for (const [roleKey, arr] of Object.entries(compo.signups)) {
+      for (const s of arr) {
+        if (s && s.userId) {
+          inscritos.push(`• **${s.ign}** — ${roleKey.toUpperCase()}${s.build ? ` (${s.build})` : ""}`);
+          totalInscritos++;
+        }
+      }
+    }
+
+    const embed = new EmbedBuilder()
+      .setColor(0x2B2D31)
+      .setTitle(`🔧 Panel Admin — ${compo.nombre}`)
+      .setDescription(inscritos.length ? inscritos.join("\n") : "*Sin inscritos*")
+      .addFields({ name: "👥 Inscritos", value: `${totalInscritos}/${totalSlots}`, inline: true })
+      .setFooter({ text: `Composición de ${compo.authorTag}` });
+
+    const btnRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`adm_ping_${msgId}`).setLabel("📢 Pingear Todos").setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId(`adm_movevc_${msgId}`).setLabel("🔊 Mover a Voz").setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId(`adm_close_${msgId}`).setLabel("🗑️ Cerrar Compo").setStyle(ButtonStyle.Danger)
+    );
+
+    const kickOptions = [];
+    for (const [roleKey, arr] of Object.entries(compo.signups)) {
+      arr.forEach((s) => {
+        if (s && s.userId) {
+          kickOptions.push({ label: `${s.ign} (${roleKey.toUpperCase()})`.slice(0, 100), value: `${s.userId}`, emoji: "👟" });
+        }
+      });
+    }
+
+    const components = [btnRow];
+
+    if (kickOptions.length > 0) {
+      components.push(new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder().setCustomId(`adm_kick_${msgId}`).setPlaceholder("👟 Kickear usuario...").addOptions(kickOptions.slice(0, 25))
+      ));
+      const moveOptions = kickOptions.map(o => ({ ...o, emoji: "🔄" }));
+      components.push(new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder().setCustomId(`adm_setrol_${msgId}`).setPlaceholder("🔄 Mover rol/arma de usuario...").addOptions(moveOptions.slice(0, 25))
+      ));
+    }
+
+    return interaction.update({ embeds: [embed], components });
+  }
+
+  // ── BUTTONS: Anotarse / Desanotarse ──────────────────────
   if (interaction.isButton()) {
     const { customId, message, user } = interaction;
-    const VALID = ["signup_tank", "signup_heal", "signup_dps", "signup_sup", "signup_mount", "signup_out", "signup_admin"];
+    const VALID = ["signup_tank", "signup_heal", "signup_dps", "signup_sup", "signup_mount", "signup_out"];
     if (!VALID.includes(customId)) return;
 
     const compo = compos[message.id];
     if (!compo)
       return interaction.reply({ content: "❌ Composición no disponible.", ephemeral: true });
-
-    // ── Panel Admin ──
-    if (customId === "signup_admin") {
-      const isCreator = compo.authorId === user.id;
-      const isAdmin = checkAdmin(interaction.member);
-      if (!isCreator && !isAdmin)
-        return interaction.reply({ content: "❌ Solo el creador o administradores.", ephemeral: true });
-
-      // Recoger inscritos para mostrar en el embed
-      let inscritos = [];
-      let totalInscritos = 0;
-      const totalSlots = Object.values(compo.slots).reduce((a, b) => a + b, 0);
-      for (const [roleKey, arr] of Object.entries(compo.signups)) {
-        for (const s of arr) {
-          if (s && s.userId) {
-            inscritos.push(`• **${s.ign}** — ${roleKey.toUpperCase()}${s.build ? ` (${s.build})` : ""}`);
-            totalInscritos++;
-          }
-        }
-      }
-
-      const embed = new EmbedBuilder()
-        .setColor(0x2B2D31)
-        .setTitle(`🔧 Panel Admin — ${compo.nombre}`)
-        .setDescription(inscritos.length ? inscritos.join("\n") : "*Sin inscritos*")
-        .addFields({ name: "👥 Inscritos", value: `${totalInscritos}/${totalSlots}`, inline: true })
-        .setFooter({ text: `Composición de ${compo.authorTag}` });
-
-      // Botones de acción
-      const btnRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`adm_ping_${message.id}`).setLabel("📢 Pingear Todos").setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId(`adm_movevc_${message.id}`).setLabel("🔊 Mover a Voz").setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId(`adm_close_${message.id}`).setLabel("🗑️ Cerrar Compo").setStyle(ButtonStyle.Danger)
-      );
-
-      // Select para kickear
-      const kickOptions = [];
-      for (const [roleKey, arr] of Object.entries(compo.signups)) {
-        arr.forEach((s, i) => {
-          if (s && s.userId) {
-            kickOptions.push({ label: `${s.ign} (${roleKey.toUpperCase()})`.slice(0, 100), value: `${s.userId}`, emoji: "👟" });
-          }
-        });
-      }
-
-      const components = [btnRow];
-
-      if (kickOptions.length > 0) {
-        const kickRow = new ActionRowBuilder().addComponents(
-          new StringSelectMenuBuilder().setCustomId(`adm_kick_${message.id}`).setPlaceholder("👟 Kickear usuario...").addOptions(kickOptions.slice(0, 25))
-        );
-        components.push(kickRow);
-      }
-
-      // Select para mover rol
-      if (kickOptions.length > 0) {
-        const moveOptions = kickOptions.map(o => ({ ...o, emoji: "🔄" }));
-        const moveRow = new ActionRowBuilder().addComponents(
-          new StringSelectMenuBuilder().setCustomId(`adm_setrol_${message.id}`).setPlaceholder("🔄 Mover rol/arma de usuario...").addOptions(moveOptions.slice(0, 25))
-        );
-        components.push(moveRow);
-      }
-
-      return interaction.reply({ embeds: [embed], components, ephemeral: true });
-    }
 
     // Desanotarse
     if (customId === "signup_out") {
