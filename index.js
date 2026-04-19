@@ -887,23 +887,33 @@ async function handle(interaction) {
       return interaction.reply({ content: "❌ Sin slots disponibles.", ephemeral: true });
 
     const roleBuilds = compo.builds?.[role] || [];
-    const options = [];
+    const optionsMap = new Map();
 
     availableIdxs.forEach(idx => {
       const buildDef = roleBuilds[idx];
       if (buildDef) {
         if (buildDef.includes("/")) {
           buildDef.split("/").forEach(b => {
-            options.push({ label: b.trim().slice(0, 100), value: `${idx}|${b.trim()}`.slice(0, 100), emoji: "🎯" });
+            const clean = b.trim().slice(0, 100);
+            if (!optionsMap.has(clean)) {
+              optionsMap.set(clean, { label: clean, value: `${idx}|${clean}`, emoji: "🎯" });
+            }
           });
         } else {
-          options.push({ label: buildDef.slice(0, 100), value: `${idx}|${buildDef}`.slice(0, 100), emoji: "🎯" });
+          const clean = buildDef.slice(0, 100);
+          if (!optionsMap.has(clean)) {
+            optionsMap.set(clean, { label: clean, value: `${idx}|${clean}`, emoji: "🎯" });
+          }
         }
       } else {
-        const label = `Asiento ${idx + 1}`;
-        options.push({ label: label, value: `${idx}|`, emoji: "🎯" });
+        const label = `Asiento libre`;
+        if (!optionsMap.has(label)) {
+          optionsMap.set(label, { label: label, value: `${idx}|`, emoji: "🎯" });
+        }
       }
     });
+    
+    const options = Array.from(optionsMap.values());
 
     const isCurrentlyInRole = compo.signups[role].some(s => s?.userId === user.id);
 
