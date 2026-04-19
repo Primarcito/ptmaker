@@ -3,7 +3,7 @@ const {
   Client, GatewayIntentBits, REST, Routes,
   SlashCommandBuilder, EmbedBuilder,
   ButtonBuilder, ButtonStyle, ActionRowBuilder,
-  StringSelectMenuBuilder, ModalBuilder,
+  StringSelectMenuBuilder, ModalBuilder, RoleSelectMenuBuilder, ChannelSelectMenuBuilder,
   TextInputBuilder, TextInputStyle, ChannelType,
 } = require("discord.js");
 const fs = require("fs");
@@ -54,10 +54,30 @@ const pendingDropdowns = new Map();
 // ════════════════════════════════════════════════════════════
 //  CONFIG
 // ════════════════════════════════════════════════════════════
-const ADMIN_ROLES = process.env.ADMIN_ROLES ? process.env.ADMIN_ROLES.split(",") : ["852823068475785217", "983987481961717782"];
-const ZVZ_ROLE = process.env.ZVZ_ROLE || "1468028696148312189";
-const PVPPVE_ROLE = process.env.PVPPVE_ROLE || "1493273036369952860";
-const ALLOWED_CHANNELS = process.env.ALLOWED_CHANNELS ? process.env.ALLOWED_CHANNELS.split(",") : ["1402080321150652426", "1423098812938981449", "1471843096018026669"];
+const CONFIG_FILE = path.join(DATA_DIR, "config.json");
+let appConfig = {
+  adminRoles: process.env.ADMIN_ROLES ? process.env.ADMIN_ROLES.split(",") : ["852823068475785217", "983987481961717782"],
+  zvzRoles: process.env.ZVZ_ROLE ? process.env.ZVZ_ROLE.split(",") : ["1468028696148312189"],
+  pvpveRoles: process.env.PVPPVE_ROLE ? process.env.PVPPVE_ROLE.split(",") : ["1493273036369952860"],
+  allowedChannels: process.env.ALLOWED_CHANNELS ? process.env.ALLOWED_CHANNELS.split(",") : ["1402080321150652426", "1423098812938981449", "1471843096018026669"]
+};
+
+try {
+  if (fs.existsSync(CONFIG_FILE)) {
+    appConfig = { ...appConfig, ...JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8")) };
+  } else {
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(appConfig, null, 2));
+  }
+} catch (err) {
+  console.error("Error cargando config.json", err);
+}
+
+const saveConfig = () => fsPromises.writeFile(CONFIG_FILE, JSON.stringify(appConfig, null, 2)).catch(console.error);
+
+const checkAdmin = (member) => appConfig.adminRoles.length === 0 ? member.permissions.has("Administrator") : member.roles.cache.some(r => appConfig.adminRoles.includes(r.id));
+const checkZvZ = (member) => member.roles.cache.some(r => appConfig.zvzRoles.includes(r.id)) || checkAdmin(member);
+const checkPvP = (member) => member.roles.cache.some(r => appConfig.pvpveRoles.includes(r.id)) || checkAdmin(member);
+const checkChannel = (chId) => appConfig.allowedChannels.length === 0 || appConfig.allowedChannels.includes(chId);
 
 // ════════════════════════════════════════════════════════════
 //  PARSER
@@ -317,6 +337,9 @@ client.once("clientReady", async () => {
       .setName("pt-dashboard")
       .setDescription("Panel admin de plantillas"),
     new SlashCommandBuilder()
+      .setName("pt-config")
+      .setDescription("Panel de configuración de permisos globales"),
+    new SlashCommandBuilder()
       .setName("pt-moveall")
       .setDescription("Mueve a inscritos a un canal de voz")
       .addChannelOption(o => o.setName("canal").setDescription("Canal de voz destino").setRequired(true).addChannelTypes(ChannelType.GuildVoice)),
@@ -392,10 +415,10 @@ async function handle(interaction) {
 
   // ── SLASH COMMANDS ────────────────────────────────────────
   if (interaction.isChatInputCommand()) {
-    if (!ALLOWED_CHANNELS.includes(interaction.channelId))
+    if (!checkChannel(interaction.channelId))
       return interaction.reply({ content: "❌ Canal no permitido.", ephemeral: true });
 
-    const hasAdmin = interaction.member.roles.cache.some(r => ADMIN_ROLES.includes(r.id));
+    const hasAdmin = checkAdmin(interaction.member);
 
     // /pt-compo
     if (interaction.commandName === "pt-compo") {
@@ -416,9 +439,9 @@ async function handle(interaction) {
       if (!t) return interaction.reply({ content: `❌ Plantilla **${tName}** no encontrada.`, ephemeral: true });
 
       const tLo = t.tipo.toLowerCase();
-      if (tLo.includes("zvz") && !interaction.member.roles.cache.has(ZVZ_ROLE) && !hasAdmin)
+      if (tLo.includes("zvz") && !checkZvZ(interaction.member))
         return interaction.reply({ content: "❌ Sin rol para lanzar ZvZ.", ephemeral: true });
-      if ((tLo.includes("pvp") || tLo.includes("pve")) && !interaction.member.roles.cache.has(PVPPVE_ROLE) && !hasAdmin)
+      if ((tLo.includes("pvp") || tLo.includes("pve")) && !checkPvP(interaction.member))
         return interaction.reply({ content: "❌ Sin rol para lanzar PvP/PvE.", ephemeral: true });
 
       const compoData = {
@@ -610,6 +633,37 @@ async function handle(interaction) {
       return interaction.reply({ content: replyMsg + `.`, ephemeral: false });
     }
 
+    // /pt-config
+    if (interaction.commandName === "pt-config") {
+      if (!hasAdmin) return interaction.reply({ content: "❌ Sin permiso.", ephemeral: true });
+
+      const embed = new EmbedBuilder()
+        .setColor(0x2B2D31)
+        .setTitle("⚙️ Panel de Configuración de Permisos")
+        .setDescription("Ajusta quién puede usar el bot.")
+        .addFields(
+          { name: "🟢 Administradores Globales", value: appConfig.adminRoles.length ? appConfig.adminRoles.map(r => `<@&${r}>`).join(" ") : "*Solo roles admin nativos*", inline: false },
+          { name: "🏰 Creadores ZvZ", value: appConfig.zvzRoles.length ? appConfig.zvzRoles.map(r => `<@&${r}>`).join(" ") : "*Nadie*", inline: false },
+          { name: "⚔️ Creadores PvP/PvE", value: appConfig.pvpveRoles.length ? appConfig.pvpveRoles.map(r => `<@&${r}>`).join(" ") : "*Nadie*", inline: false },
+          { name: "💬 Canales Permitidos", value: appConfig.allowedChannels.length ? appConfig.allowedChannels.map(c => `<#${c}>`).join(" ") : "*Todos*", inline: false }
+        );
+
+      const row1 = new ActionRowBuilder().addComponents(
+        new RoleSelectMenuBuilder().setCustomId("config_admin").setPlaceholder("Seleccionar Administradores").setMinValues(0).setMaxValues(10)
+      );
+      const row2 = new ActionRowBuilder().addComponents(
+        new RoleSelectMenuBuilder().setCustomId("config_zvz").setPlaceholder("Seleccionar Creadores ZvZ").setMinValues(0).setMaxValues(10)
+      );
+      const row3 = new ActionRowBuilder().addComponents(
+        new RoleSelectMenuBuilder().setCustomId("config_pvpve").setPlaceholder("Seleccionar Creadores PvP/PvE").setMinValues(0).setMaxValues(10)
+      );
+      const row4 = new ActionRowBuilder().addComponents(
+        new ChannelSelectMenuBuilder().setCustomId("config_channels").setPlaceholder("Canales Permitidos").setChannelTypes(ChannelType.GuildText).setMinValues(0).setMaxValues(10)
+      );
+
+      return interaction.reply({ embeds: [embed], components: [row1, row2, row3, row4], ephemeral: true });
+    }
+
     // /pt-dashboard
     if (interaction.commandName === "pt-dashboard") {
       if (!hasAdmin) return interaction.reply({ content: "❌ Sin permiso.", ephemeral: true });
@@ -670,12 +724,12 @@ async function handle(interaction) {
     const tipo = interaction.customId.replace("modal_compo_", "");
     const composRaw = interaction.fields.getTextInputValue("composicion").trim();
     const estrategia = interaction.fields.getTextInputValue("estrategia").trim();
-    const hasAdmin = interaction.member.roles.cache.some(r => ADMIN_ROLES.includes(r.id));
+    const hasAdmin = checkAdmin(interaction.member);
     const tLo = tipo.toLowerCase();
 
-    if (tLo.includes("zvz") && !interaction.member.roles.cache.has(ZVZ_ROLE) && !hasAdmin)
+    if (tLo.includes("zvz") && !checkZvZ(interaction.member))
       return interaction.reply({ content: "❌ Sin rol para crear ZvZ.", ephemeral: true });
-    if ((tLo.includes("pvp") || tLo.includes("pve")) && !interaction.member.roles.cache.has(PVPPVE_ROLE) && !hasAdmin)
+    if ((tLo.includes("pvp") || tLo.includes("pve")) && !checkPvP(interaction.member))
       return interaction.reply({ content: "❌ Sin rol para crear PvP/PvE.", ephemeral: true });
 
     const { slots, builds, partyAssignments } = parseComposition(composRaw);
@@ -721,6 +775,46 @@ async function handle(interaction) {
     templates[tName] = { ...(templates[tName] || {}), tipo, slots, builds, partyAssignments, estrategia, rawComposicion: composRaw };
     saveTemplates();
     return interaction.update({ content: `✅ **${tName}** actualizada.`, embeds: [], components: [] });
+  }
+
+  // ── CONFIG SELECT MENUS ──────────────────────────────────
+  if (interaction.isRoleSelectMenu() && interaction.customId.startsWith("config_")) {
+    if (!checkAdmin(interaction.member)) return interaction.reply({ content: "❌ Sin permiso.", ephemeral: true });
+
+    if (interaction.customId === "config_admin") appConfig.adminRoles = interaction.values;
+    if (interaction.customId === "config_zvz") appConfig.zvzRoles = interaction.values;
+    if (interaction.customId === "config_pvpve") appConfig.pvpveRoles = interaction.values;
+    
+    saveConfig();
+
+    const embed = new EmbedBuilder()
+      .setColor(0x2B2D31)
+      .setTitle("⚙️ Panel de Configuración de Permisos")
+      .addFields(
+        { name: "🟢 Administradores Globales", value: appConfig.adminRoles.length ? appConfig.adminRoles.map(r => `<@&${r}>`).join(" ") : "*Solo roles admin nativos*", inline: false },
+        { name: "🏰 Creadores ZvZ", value: appConfig.zvzRoles.length ? appConfig.zvzRoles.map(r => `<@&${r}>`).join(" ") : "*Nadie*", inline: false },
+        { name: "⚔️ Creadores PvP/PvE", value: appConfig.pvpveRoles.length ? appConfig.pvpveRoles.map(r => `<@&${r}>`).join(" ") : "*Nadie*", inline: false },
+        { name: "💬 Canales Permitidos", value: appConfig.allowedChannels.length ? appConfig.allowedChannels.map(c => `<#${c}>`).join(" ") : "*Todos*", inline: false }
+      );
+    return interaction.update({ embeds: [embed] });
+  }
+
+  if (interaction.isChannelSelectMenu() && interaction.customId === "config_channels") {
+    if (!checkAdmin(interaction.member)) return interaction.reply({ content: "❌ Sin permiso.", ephemeral: true });
+    
+    appConfig.allowedChannels = interaction.values;
+    saveConfig();
+    
+    const embed = new EmbedBuilder()
+      .setColor(0x2B2D31)
+      .setTitle("⚙️ Panel de Configuración de Permisos")
+      .addFields(
+        { name: "🟢 Administradores Globales", value: appConfig.adminRoles.length ? appConfig.adminRoles.map(r => `<@&${r}>`).join(" ") : "*Solo roles admin nativos*", inline: false },
+        { name: "🏰 Creadores ZvZ", value: appConfig.zvzRoles.length ? appConfig.zvzRoles.map(r => `<@&${r}>`).join(" ") : "*Nadie*", inline: false },
+        { name: "⚔️ Creadores PvP/PvE", value: appConfig.pvpveRoles.length ? appConfig.pvpveRoles.map(r => `<@&${r}>`).join(" ") : "*Nadie*", inline: false },
+        { name: "💬 Canales Permitidos", value: appConfig.allowedChannels.length ? appConfig.allowedChannels.map(c => `<#${c}>`).join(" ") : "*Todos*", inline: false }
+      );
+    return interaction.update({ embeds: [embed] });
   }
 
   // ── SELECT: Dashboard ─────────────────────────────────────
