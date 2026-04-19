@@ -285,7 +285,6 @@ function buildCompoButtons(compo) {
   if ((slots.support ?? 0) > 0) btns.push(new ButtonBuilder().setCustomId("signup_sup").setLabel(`🔮 Support (${filled("support")}/${slots.support})`).setStyle(ButtonStyle.Primary).setDisabled(full("support")));
   if ((slots.mount ?? 0) > 0) btns.push(new ButtonBuilder().setCustomId("signup_mount").setLabel(`🐎 Montura (${filled("mount")}/${slots.mount})`).setStyle(ButtonStyle.Primary).setDisabled(full("mount")));
   
-  btns.push(new ButtonBuilder().setCustomId("signup_edit").setLabel("✏️ Editar Arma").setStyle(ButtonStyle.Secondary));
   btns.push(new ButtonBuilder().setCustomId("signup_out").setLabel("✗ Desanotarme").setStyle(ButtonStyle.Danger));
 
   const rows = [];
@@ -685,38 +684,6 @@ async function handle(interaction) {
     }
     return;
   }
-  // ── MODAL: Editar arma personal ───────────────────────────
-  if (interaction.isModalSubmit() && interaction.customId.startsWith("modal_edit_arma_")) {
-    const msgId = interaction.customId.replace("modal_edit_arma_", "");
-    const nuevaArma = interaction.fields.getTextInputValue("nueva_arma").trim();
-    
-    const c = compos[msgId];
-    if (!c) return interaction.reply({ content: "❌ Composición no disponible.", ephemeral: true });
-    
-    let updated = false;
-    for (const roleKey of Object.keys(c.signups)) {
-      const arr = c.signups[roleKey];
-      const i = arr.findIndex(s => s && s.userId === interaction.user.id);
-      if (i !== -1) {
-        arr[i].build = nuevaArma;
-        updated = true;
-        break;
-      }
-    }
-    
-    if (!updated) return interaction.reply({ content: "❌ No estás anotado.", ephemeral: true });
-    
-    saveCompos();
-    
-    if (c.threadMsgId) {
-      await updateParentEmbed(client, c);
-      return interaction.reply({ content: `✅ Arma actualizada a **${nuevaArma}**.`, ephemeral: true });
-    } else {
-      return interaction.update({ embeds: [buildCompoEmbed(c)], components: buildCompoButtons(c) }).catch(() => {
-         interaction.reply({ content: `✅ Arma actualizada a **${nuevaArma}**.`, ephemeral: true });
-      });
-    }
-  }
 
   // ── MODAL: Crear plantilla ────────────────────────────────
   if (interaction.isModalSubmit() && interaction.customId.startsWith("modal_compo_")) {
@@ -915,38 +882,12 @@ async function handle(interaction) {
   // ── BUTTONS: Anotarse / Desanotarse ──────────────────────
   if (interaction.isButton()) {
     const { customId, message, user } = interaction;
-    const VALID = ["signup_tank", "signup_heal", "signup_dps", "signup_sup", "signup_mount", "signup_out", "signup_edit"];
+    const VALID = ["signup_tank", "signup_heal", "signup_dps", "signup_sup", "signup_mount", "signup_out"];
     if (!VALID.includes(customId)) return;
 
     const compo = compos[message.id];
     if (!compo)
       return interaction.reply({ content: "❌ Composición no disponible.", ephemeral: true });
-
-    // Editar arma
-    if (customId === "signup_edit") {
-      let userData = null;
-      for (const arr of Object.values(compo.signups)) {
-        const i = arr.findIndex(s => s?.userId === user.id);
-        if (i !== -1) { userData = arr[i]; break; }
-      }
-      if (!userData) return interaction.reply({ content: "❌ No estás anotado en esta composición.", ephemeral: true });
-
-      const modal = new ModalBuilder()
-        .setCustomId(`modal_edit_arma_${message.id}`)
-        .setTitle("✏️ Editar mi Arma");
-      modal.addComponents(
-        new ActionRowBuilder().addComponents(
-          new TextInputBuilder()
-            .setCustomId("nueva_arma")
-            .setLabel("Nueva arma / variante")
-            .setStyle(TextInputStyle.Short)
-            .setValue(userData.build || "")
-            .setRequired(true)
-            .setMaxLength(50)
-        )
-      );
-      return interaction.showModal(modal);
-    }
 
     // Desanotarse
     if (customId === "signup_out") {
