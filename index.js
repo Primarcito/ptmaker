@@ -4,6 +4,7 @@ const {
   SlashCommandBuilder, EmbedBuilder,
   ButtonBuilder, ButtonStyle, ActionRowBuilder,
   StringSelectMenuBuilder, ModalBuilder, RoleSelectMenuBuilder, ChannelSelectMenuBuilder,
+  UserSelectMenuBuilder,
   TextInputBuilder, TextInputStyle, ChannelType,
 } = require("discord.js");
 const fs = require("fs");
@@ -286,6 +287,7 @@ function buildCompoButtons(compo) {
   if ((slots.mount ?? 0) > 0) btns.push(new ButtonBuilder().setCustomId("signup_mount").setLabel(`🐎 Montura (${filled("mount")}/${slots.mount})`).setStyle(ButtonStyle.Primary).setDisabled(full("mount")));
   
   btns.push(new ButtonBuilder().setCustomId("signup_out").setLabel("✗ Desanotarme").setStyle(ButtonStyle.Danger));
+  btns.push(new ButtonBuilder().setCustomId("signup_admin").setLabel("🔧 Admin").setStyle(ButtonStyle.Secondary));
 
   const rows = [];
   for (let i = 0; i < btns.length; i += 5)
@@ -338,32 +340,6 @@ client.once("clientReady", async () => {
     new SlashCommandBuilder()
       .setName("pt-config")
       .setDescription("Panel de configuración de permisos globales"),
-    new SlashCommandBuilder()
-      .setName("pt-moveall")
-      .setDescription("Mueve a inscritos a un canal de voz")
-      .addChannelOption(o => o.setName("canal").setDescription("Canal de voz destino").setRequired(true).addChannelTypes(ChannelType.GuildVoice)),
-    new SlashCommandBuilder()
-      .setName("pt-ping")
-      .setDescription("Etiqueta a todos los inscritos de la compo"),
-    new SlashCommandBuilder()
-      .setName("pt-kick")
-      .setDescription("Expulsa a un usuario de la composición")
-      .addUserOption(o => o.setName("usuario").setDescription("Usuario a expulsar").setRequired(true)),
-    new SlashCommandBuilder()
-      .setName("pt-setrol")
-      .setDescription("Modifica el rol o el arma de un usuario")
-      .addUserOption(o => o.setName("usuario").setDescription("Usuario a modificar").setRequired(true))
-      .addStringOption(o => o.setName("rol")
-        .setDescription("Nuevo rol destino (Opcional)")
-        .setRequired(false)
-        .addChoices(
-          { name: "🛡️ Tank", value: "tank" },
-          { name: "🌿 Healer", value: "healer" },
-          { name: "⚔️ DPS", value: "dps" },
-          { name: "🔮 Support", value: "support" },
-          { name: "🐎 Montura", value: "mount" }
-        ))
-      .addStringOption(o => o.setName("arma").setDescription("Nueva arma/clase (Opcional)").setRequired(false)),
   ];
   const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
   // Registrar como Comandos Globales
@@ -498,49 +474,7 @@ async function handle(interaction) {
       return;
     }
 
-    // Resolutor de composición activa (para ping o moveall)
-    const resolveTargetCompo = () => {
-      return Object.values(compos)
-        .filter(c => c.parentMsgId === interaction.channelId || c.channelId === interaction.channelId || c.threadMsgId === interaction.channelId)
-        .sort((a, b) => b.createdAt - a.createdAt)[0];
-    };
-
-    // /pt-ping
-    if (interaction.commandName === "pt-ping") {
-      const c = resolveTargetCompo();
-      if (!c) return interaction.reply({ content: "❌ Composición no encontrada. Úsalo dentro del hilo de una compo activa.", ephemeral: true });
-      let users = [];
-      for (const arr of Object.values(c.signups)) for (const s of arr) if (s && s.userId) users.push(`<@${s.userId}>`);
-      if (!users.length) return interaction.reply({ content: "⚠️ No hay inscritos.", ephemeral: true });
-      return interaction.reply({ content: `🔔 **Aviso:** ${users.join(" ")}`, allowedMentions: { parse: ['users'] } });
-    }
-
-    // /pt-moveall
-    if (interaction.commandName === "pt-moveall") {
-      const c = resolveTargetCompo();
-      if (!c) return interaction.reply({ content: "❌ Composición no encontrada. Úsalo dentro del hilo de una compo activa.", ephemeral: true });
-      if (c.authorId !== interaction.user.id && !hasAdmin) return interaction.reply({ content: "❌ Solo el creador de la party o administradores.", ephemeral: true });
-      
-      const channel = interaction.options.getChannel("canal");
-      if (!channel || !channel.isVoiceBased()) return interaction.reply({ content: "❌ Selecciona un canal de voz válido.", ephemeral: true });
-      
-      await interaction.deferReply({ ephemeral: true });
-      let userIds = [];
-      for (const arr of Object.values(c.signups)) for (const s of arr) if (s && s.userId) userIds.push(s.userId);
-      if (!userIds.length) return interaction.editReply("⚠️ Nadie anotado.");
-      
-      let moved = 0, off = 0, errs = 0;
-      await Promise.all(userIds.map(async (uId) => {
-         try {
-           const member = interaction.guild.members.cache.get(uId) || await interaction.guild.members.fetch(uId).catch(()=>null);
-           if (!member || !member.voice.channelId) { off++; return; }
-           await member.voice.setChannel(channel.id); moved++;
-         } catch { errs++; }
-      }));
-      return interaction.editReply(`✅ **Movidos:** ${moved} | 📴 **Desconectados o sin voz:** ${off} | ⚠️ **Errores:** ${errs}`);
-    }
-
-    // Helper de UI para comandos inline
+    // Helper de UI para sincronizar el cartel
     async function syncCompoUI(c) {
       if (c.threadMsgId) {
         await updateParentEmbed(client, c);
@@ -560,76 +494,6 @@ async function handle(interaction) {
           }
         } catch(e) {}
       }
-    }
-
-    // /pt-kick
-    if (interaction.commandName === "pt-kick") {
-      const c = resolveTargetCompo();
-      if (!c) return interaction.reply({ content: "❌ Composición no encontrada. Úsalo dentro del hilo de una compo activa.", ephemeral: true });
-      if (c.authorId !== interaction.user.id && !hasAdmin) return interaction.reply({ content: "❌ Solo el creador de la party o administradores.", ephemeral: true });
-      
-      const targetUser = interaction.options.getUser("usuario");
-      let removed = false;
-      for (const roleKey of Object.keys(c.signups)) {
-        const arr = c.signups[roleKey];
-        const idx = arr.findIndex(s => s && s.userId === targetUser.id);
-        if (idx !== -1) { arr[idx] = null; removed = true; }
-      }
-      if (!removed) return interaction.reply({ content: `⚠️ ${targetUser.username} no está anotado.`, ephemeral: true });
-      
-      saveCompos();
-      await syncCompoUI(c);
-      return interaction.reply({ content: `👟 **${targetUser.username}** fue expulsado de la composición.`, ephemeral: false });
-    }
-
-    // /pt-setrol
-    if (interaction.commandName === "pt-setrol") {
-      const c = resolveTargetCompo();
-      if (!c) return interaction.reply({ content: "❌ Composición no encontrada. Úsalo dentro del hilo de una compo activa.", ephemeral: true });
-      if (c.authorId !== interaction.user.id && !hasAdmin) return interaction.reply({ content: "❌ Solo el creador de la party o administradores.", ephemeral: true });
-      
-      const targetUser = interaction.options.getUser("usuario");
-      const newRole = interaction.options.getString("rol");
-      const newArma = interaction.options.getString("arma");
-
-      if (!newRole && !newArma) return interaction.reply({ content: "⚠️ Debes especificar un nuevo rol, una nueva arma o ambos.", ephemeral: true });
-
-      let currentRole = null;
-      let currentIndex = -1;
-      let userData = null;
-
-      for (const roleKey of Object.keys(c.signups)) {
-        const arr = c.signups[roleKey];
-        const idx = arr.findIndex(s => s && s.userId === targetUser.id);
-        if (idx !== -1) {
-          currentRole = roleKey;
-          currentIndex = idx;
-          userData = { ...arr[idx] };
-          break;
-        }
-      }
-      
-      if (!userData) return interaction.reply({ content: `⚠️ ${targetUser.username} no está anotado.`, ephemeral: true });
-      
-      const finalRole = newRole || currentRole;
-      const finalBuild = newArma || userData.build;
-
-      if (finalRole !== currentRole) {
-          const emptyIdx = c.signups[finalRole].findIndex(s => s === null);
-          if (emptyIdx === -1) return interaction.reply({ content: `❌ No hay espacios disponibles en **${finalRole.toUpperCase()}**.`, ephemeral: true });
-          c.signups[currentRole][currentIndex] = null;
-          c.signups[finalRole][emptyIdx] = { userId: userData.userId, ign: userData.ign, build: finalBuild };
-      } else {
-          c.signups[currentRole][currentIndex] = { userId: userData.userId, ign: userData.ign, build: finalBuild };
-      }
-
-      saveCompos();
-      await syncCompoUI(c);
-      
-      let replyMsg = `🔄 **${targetUser.username}** actualizado`;
-      if (newRole) replyMsg += ` a **${finalRole.toUpperCase()}**`;
-      if (newArma) replyMsg += ` con arma **${newArma}**`;
-      return interaction.reply({ content: replyMsg + `.`, ephemeral: false });
     }
 
     // /pt-config
@@ -879,15 +743,357 @@ async function handle(interaction) {
     return;
   }
 
-  // ── BUTTONS: Anotarse / Desanotarse ──────────────────────
+  // ── ADMIN PANEL: Botones (ping, movevc, close) ───────────
+  if (interaction.isButton() && interaction.customId.startsWith("adm_")) {
+    const id = interaction.customId;
+    // Extraer msgId (ID del mensaje de botones en el hilo)
+    const parts = id.split("_");
+    const action = parts[1]; // ping, movevc, close, confirmclose
+    const msgId = parts.slice(2).join("_");
+
+    const compo = compos[msgId];
+    if (!compo) return interaction.reply({ content: "❌ Composición no disponible.", ephemeral: true });
+
+    const isCreator = compo.authorId === interaction.user.id;
+    const isAdmin = checkAdmin(interaction.member);
+    if (!isCreator && !isAdmin)
+      return interaction.reply({ content: "❌ Sin permiso.", ephemeral: true });
+
+    // Helper para sincronizar UI (fuera del scope de slash commands)
+    async function syncAdminUI(c) {
+      if (c.threadMsgId) {
+        await updateParentEmbed(client, c);
+        try {
+          const thread = client.channels.cache.get(c.parentMsgId) || await client.channels.fetch(c.parentMsgId).catch(()=>null);
+          if (thread) {
+            const msg = await thread.messages.fetch(c.threadMsgId).catch(()=>null);
+            if (msg) await msg.edit({ components: buildCompoButtons(c) });
+          }
+        } catch(e) {}
+      } else if (c.parentMsgId) {
+        try {
+          const ch = client.channels.cache.get(c.channelId) || await client.channels.fetch(c.channelId).catch(()=>null);
+          if (ch) {
+            const msg = await ch.messages.fetch(c.parentMsgId).catch(()=>null);
+            if (msg) await msg.edit({ embeds: [buildCompoEmbed(c)], components: buildCompoButtons(c) });
+          }
+        } catch(e) {}
+      }
+    }
+
+    // 📢 Pingear Todos
+    if (action === "ping") {
+      let users = [];
+      for (const arr of Object.values(compo.signups)) for (const s of arr) if (s && s.userId) users.push(`<@${s.userId}>`);
+      if (!users.length) return interaction.reply({ content: "⚠️ No hay inscritos.", ephemeral: true });
+      // Responder al panel ephemeral y luego mandar el ping público
+      await interaction.update({ content: "✅ Ping enviado.", embeds: [], components: [] });
+      const ch = client.channels.cache.get(compo.channelId) || await client.channels.fetch(compo.channelId).catch(()=>null);
+      if (ch) await ch.send({ content: `🔔 **Aviso de ${compo.nombre}:** ${users.join(" ")}`, allowedMentions: { parse: ['users'] } });
+      return;
+    }
+
+    // 🔊 Mover a Voz — mostrar selector de canal de voz
+    if (action === "movevc") {
+      const vcSelect = new ActionRowBuilder().addComponents(
+        new ChannelSelectMenuBuilder()
+          .setCustomId(`adm_vcpick_${msgId}`)
+          .setPlaceholder("Selecciona canal de voz...")
+          .setChannelTypes(ChannelType.GuildVoice)
+      );
+      return interaction.update({
+        content: "🔊 **Selecciona el canal de voz destino:**",
+        embeds: [], components: [vcSelect]
+      });
+    }
+
+    // 🗑️ Cerrar Compo — pedir confirmación
+    if (action === "close") {
+      return interaction.update({
+        content: `### 🛑 ¿Seguro?\nEsto cerrará la composición **${compo.nombre}** y eliminará los datos.`,
+        embeds: [],
+        components: [new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId(`adm_confirmclose_${msgId}`).setLabel("⚠️ Confirmar cierre").setStyle(ButtonStyle.Danger),
+          new ButtonBuilder().setCustomId(`adm_cancelclose_${msgId}`).setLabel("Cancelar").setStyle(ButtonStyle.Secondary),
+        )]
+      });
+    }
+
+    // Confirmar cierre
+    if (action === "confirmclose") {
+      // Intentar borrar mensajes
+      try {
+        const ch = client.channels.cache.get(compo.channelId) || await client.channels.fetch(compo.channelId).catch(()=>null);
+        if (ch && compo.parentMsgId) {
+          const parentMsg = await ch.messages.fetch(compo.parentMsgId).catch(()=>null);
+          if (parentMsg) {
+            // Si tiene hilo, archivarlo
+            if (parentMsg.thread) await parentMsg.thread.setArchived(true).catch(()=>{});
+          }
+        }
+      } catch(e) {}
+      delete compos[msgId];
+      saveCompos();
+      return interaction.update({ content: `🗑️ Composición **${compo.nombre}** cerrada.`, embeds: [], components: [] });
+    }
+
+    // Cancelar cierre
+    if (action === "cancelclose") {
+      return interaction.update({ content: "✅ Cierre cancelado.", embeds: [], components: [] });
+    }
+
+    return;
+  }
+
+  // ── ADMIN PANEL: Select Menus (kick, setrol, vcpick) ─────
+  if (interaction.isStringSelectMenu() && interaction.customId.startsWith("adm_")) {
+    const id = interaction.customId;
+    const parts = id.split("_");
+    const action = parts[1]; // kick, setrol
+    const msgId = parts.slice(2).join("_");
+
+    const compo = compos[msgId];
+    if (!compo) return interaction.update({ content: "❌ Composición no disponible.", components: [] });
+
+    const isCreator = compo.authorId === interaction.user.id;
+    const isAdmin = checkAdmin(interaction.member);
+    if (!isCreator && !isAdmin) return interaction.reply({ content: "❌ Sin permiso.", ephemeral: true });
+
+    async function syncAdminUI(c) {
+      if (c.threadMsgId) {
+        await updateParentEmbed(client, c);
+        try {
+          const thread = client.channels.cache.get(c.parentMsgId) || await client.channels.fetch(c.parentMsgId).catch(()=>null);
+          if (thread) {
+            const msg = await thread.messages.fetch(c.threadMsgId).catch(()=>null);
+            if (msg) await msg.edit({ components: buildCompoButtons(c) });
+          }
+        } catch(e) {}
+      } else if (c.parentMsgId) {
+        try {
+          const ch = client.channels.cache.get(c.channelId) || await client.channels.fetch(c.channelId).catch(()=>null);
+          if (ch) {
+            const msg = await ch.messages.fetch(c.parentMsgId).catch(()=>null);
+            if (msg) await msg.edit({ embeds: [buildCompoEmbed(c)], components: buildCompoButtons(c) });
+          }
+        } catch(e) {}
+      }
+    }
+
+    // 👟 Kickear usuario
+    if (action === "kick") {
+      const targetUserId = interaction.values[0];
+      let removedName = null;
+      for (const roleKey of Object.keys(compo.signups)) {
+        const arr = compo.signups[roleKey];
+        const idx = arr.findIndex(s => s && s.userId === targetUserId);
+        if (idx !== -1) { removedName = arr[idx].ign; arr[idx] = null; }
+      }
+      if (!removedName) return interaction.update({ content: "⚠️ Usuario no encontrado.", components: [] });
+      saveCompos();
+      await syncAdminUI(compo);
+      return interaction.update({ content: `👟 **${removedName}** fue expulsado de la composición.`, embeds: [], components: [] });
+    }
+
+    // 🔄 Mover rol/arma — paso 1: seleccionar usuario, paso 2: elegir nuevo rol
+    if (action === "setrol") {
+      const targetUserId = interaction.values[0];
+      // Buscar datos actuales del usuario
+      let currentData = null;
+      let currentRole = null;
+      for (const [roleKey, arr] of Object.entries(compo.signups)) {
+        const s = arr.find(s => s && s.userId === targetUserId);
+        if (s) { currentData = s; currentRole = roleKey; break; }
+      }
+      if (!currentData) return interaction.update({ content: "⚠️ Usuario no encontrado.", components: [] });
+
+      // Mostrar selector de nuevo rol + input de arma mediante una modal
+      const modal = new ModalBuilder()
+        .setCustomId(`adm_modal_setrol_${msgId}_${targetUserId}`)
+        .setTitle(`🔄 Mover: ${currentData.ign}`.slice(0, 45));
+      modal.addComponents(
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder()
+            .setCustomId("nuevo_rol")
+            .setLabel("Nuevo rol (tank/healer/dps/support/mount)")
+            .setStyle(TextInputStyle.Short)
+            .setValue(currentRole)
+            .setRequired(true)
+            .setMaxLength(10)
+        ),
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder()
+            .setCustomId("nueva_arma")
+            .setLabel("Arma/clase (dejar igual si no cambia)")
+            .setStyle(TextInputStyle.Short)
+            .setValue(currentData.build || "")
+            .setRequired(false)
+            .setMaxLength(50)
+        )
+      );
+      return interaction.showModal(modal);
+    }
+
+    return;
+  }
+
+  // ── ADMIN PANEL: Channel Select (mover a voz) ────────────
+  if (interaction.isChannelSelectMenu() && interaction.customId.startsWith("adm_vcpick_")) {
+    const msgId = interaction.customId.replace("adm_vcpick_", "");
+    const compo = compos[msgId];
+    if (!compo) return interaction.update({ content: "❌ Composición no disponible.", components: [] });
+
+    const channelId = interaction.values[0];
+    const channel = interaction.guild.channels.cache.get(channelId);
+    if (!channel || !channel.isVoiceBased())
+      return interaction.update({ content: "❌ Canal de voz inválido.", components: [] });
+
+    await interaction.update({ content: "⏳ Moviendo usuarios...", components: [] });
+
+    let userIds = [];
+    for (const arr of Object.values(compo.signups)) for (const s of arr) if (s && s.userId) userIds.push(s.userId);
+    if (!userIds.length) return interaction.editReply("⚠️ Nadie anotado.");
+
+    let moved = 0, off = 0, errs = 0;
+    await Promise.all(userIds.map(async (uId) => {
+      try {
+        const member = interaction.guild.members.cache.get(uId) || await interaction.guild.members.fetch(uId).catch(()=>null);
+        if (!member || !member.voice.channelId) { off++; return; }
+        await member.voice.setChannel(channel.id); moved++;
+      } catch { errs++; }
+    }));
+    return interaction.editReply(`✅ **Movidos:** ${moved} | 📴 **Sin voz:** ${off} | ⚠️ **Errores:** ${errs}`);
+  }
+
+  // ── ADMIN PANEL: Modal setrol ────────────────────────────
+  if (interaction.isModalSubmit() && interaction.customId.startsWith("adm_modal_setrol_")) {
+    const withoutPrefix = interaction.customId.replace("adm_modal_setrol_", "");
+    const lastUnderscore = withoutPrefix.lastIndexOf("_");
+    const msgId = withoutPrefix.slice(0, lastUnderscore);
+    const targetUserId = withoutPrefix.slice(lastUnderscore + 1);
+
+    const compo = compos[msgId];
+    if (!compo) return interaction.reply({ content: "❌ Composición no disponible.", ephemeral: true });
+
+    const newRoleRaw = interaction.fields.getTextInputValue("nuevo_rol").trim().toLowerCase();
+    const newArma = interaction.fields.getTextInputValue("nueva_arma").trim() || undefined;
+
+    const roleAliases = { tank: "tank", tanque: "tank", healer: "healer", heal: "healer", dps: "dps", support: "support", sup: "support", mount: "mount", montura: "mount", bm: "mount" };
+    const newRole = roleAliases[newRoleRaw];
+    if (!newRole) return interaction.reply({ content: `❌ Rol inválido: **${newRoleRaw}**. Usa: tank, healer, dps, support, mount.`, ephemeral: true });
+
+    let currentRole = null, currentIndex = -1, userData = null;
+    for (const [roleKey, arr] of Object.entries(compo.signups)) {
+      const idx = arr.findIndex(s => s && s.userId === targetUserId);
+      if (idx !== -1) { currentRole = roleKey; currentIndex = idx; userData = { ...arr[idx] }; break; }
+    }
+    if (!userData) return interaction.reply({ content: "⚠️ Usuario ya no está anotado.", ephemeral: true });
+
+    const finalBuild = newArma || userData.build;
+
+    if (newRole !== currentRole) {
+      const emptyIdx = compo.signups[newRole]?.findIndex(s => s === null);
+      if (emptyIdx === undefined || emptyIdx === -1)
+        return interaction.reply({ content: `❌ Sin espacio en **${newRole.toUpperCase()}**.`, ephemeral: true });
+      compo.signups[currentRole][currentIndex] = null;
+      compo.signups[newRole][emptyIdx] = { userId: userData.userId, ign: userData.ign, build: finalBuild };
+    } else {
+      compo.signups[currentRole][currentIndex] = { userId: userData.userId, ign: userData.ign, build: finalBuild };
+    }
+
+    saveCompos();
+
+    // Sync UI
+    if (compo.threadMsgId) {
+      await updateParentEmbed(client, compo);
+      try {
+        const thread = client.channels.cache.get(compo.parentMsgId) || await client.channels.fetch(compo.parentMsgId).catch(()=>null);
+        if (thread) {
+          const msg = await thread.messages.fetch(compo.threadMsgId).catch(()=>null);
+          if (msg) await msg.edit({ components: buildCompoButtons(compo) });
+        }
+      } catch(e) {}
+    }
+
+    let replyMsg = `🔄 **${userData.ign}** movido a **${newRole.toUpperCase()}**`;
+    if (newArma) replyMsg += ` con arma **${newArma}**`;
+    return interaction.reply({ content: replyMsg + ".", ephemeral: true });
+  }
+
+  // ── BUTTONS: Anotarse / Desanotarse / Admin ──────────────
   if (interaction.isButton()) {
     const { customId, message, user } = interaction;
-    const VALID = ["signup_tank", "signup_heal", "signup_dps", "signup_sup", "signup_mount", "signup_out"];
+    const VALID = ["signup_tank", "signup_heal", "signup_dps", "signup_sup", "signup_mount", "signup_out", "signup_admin"];
     if (!VALID.includes(customId)) return;
 
     const compo = compos[message.id];
     if (!compo)
       return interaction.reply({ content: "❌ Composición no disponible.", ephemeral: true });
+
+    // ── Panel Admin ──
+    if (customId === "signup_admin") {
+      const isCreator = compo.authorId === user.id;
+      const isAdmin = checkAdmin(interaction.member);
+      if (!isCreator && !isAdmin)
+        return interaction.reply({ content: "❌ Solo el creador o administradores.", ephemeral: true });
+
+      // Recoger inscritos para mostrar en el embed
+      let inscritos = [];
+      let totalInscritos = 0;
+      const totalSlots = Object.values(compo.slots).reduce((a, b) => a + b, 0);
+      for (const [roleKey, arr] of Object.entries(compo.signups)) {
+        for (const s of arr) {
+          if (s && s.userId) {
+            inscritos.push(`• **${s.ign}** — ${roleKey.toUpperCase()}${s.build ? ` (${s.build})` : ""}`);
+            totalInscritos++;
+          }
+        }
+      }
+
+      const embed = new EmbedBuilder()
+        .setColor(0x2B2D31)
+        .setTitle(`🔧 Panel Admin — ${compo.nombre}`)
+        .setDescription(inscritos.length ? inscritos.join("\n") : "*Sin inscritos*")
+        .addFields({ name: "👥 Inscritos", value: `${totalInscritos}/${totalSlots}`, inline: true })
+        .setFooter({ text: `Composición de ${compo.authorTag}` });
+
+      // Botones de acción
+      const btnRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`adm_ping_${message.id}`).setLabel("📢 Pingear Todos").setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId(`adm_movevc_${message.id}`).setLabel("🔊 Mover a Voz").setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId(`adm_close_${message.id}`).setLabel("🗑️ Cerrar Compo").setStyle(ButtonStyle.Danger)
+      );
+
+      // Select para kickear
+      const kickOptions = [];
+      for (const [roleKey, arr] of Object.entries(compo.signups)) {
+        arr.forEach((s, i) => {
+          if (s && s.userId) {
+            kickOptions.push({ label: `${s.ign} (${roleKey.toUpperCase()})`.slice(0, 100), value: `${s.userId}`, emoji: "👟" });
+          }
+        });
+      }
+
+      const components = [btnRow];
+
+      if (kickOptions.length > 0) {
+        const kickRow = new ActionRowBuilder().addComponents(
+          new StringSelectMenuBuilder().setCustomId(`adm_kick_${message.id}`).setPlaceholder("👟 Kickear usuario...").addOptions(kickOptions.slice(0, 25))
+        );
+        components.push(kickRow);
+      }
+
+      // Select para mover rol
+      if (kickOptions.length > 0) {
+        const moveOptions = kickOptions.map(o => ({ ...o, emoji: "🔄" }));
+        const moveRow = new ActionRowBuilder().addComponents(
+          new StringSelectMenuBuilder().setCustomId(`adm_setrol_${message.id}`).setPlaceholder("🔄 Mover rol/arma de usuario...").addOptions(moveOptions.slice(0, 25))
+        );
+        components.push(moveRow);
+      }
+
+      return interaction.reply({ embeds: [embed], components, ephemeral: true });
+    }
 
     // Desanotarse
     if (customId === "signup_out") {
