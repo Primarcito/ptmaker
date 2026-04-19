@@ -126,6 +126,8 @@ function buildCompoEmbed(compo) {
 
   let rosterDesc = "";
 
+  // 💡 Para usar emojis personalizados, cambia el valor de "color"
+  // por el ID de tu emoji de Discord, por ejemplo: color: "<:tanque:1234567890>"
   const rolesConfig = [
     { key: "tank", emoji: "🛡️", color: "🔵", label: "Tanks" },
     { key: "healer", emoji: "🌿", color: "🟢", label: "Healers" },
@@ -161,10 +163,10 @@ function buildCompoEmbed(compo) {
                  const u = arr[i];
                  const buildText = u && u.build ? u.build : roleBuilds[i];
                  if (u) {
-                     parties[pt].players.push(`${color} <@${u.userId}> - *${buildText || label}*`);
+                     parties[pt].players.push(`${color} **<@${u.userId}>** - *${buildText || label}*`);
                      parties[pt].filled++;
                  } else {
-                     parties[pt].players.push(`${color} *${buildText || label}*`);
+                     parties[pt].players.push(`${color} ${buildText || label}: *[ Vacío ]*`);
                  }
                  parties[pt].total++;
              }
@@ -190,7 +192,7 @@ function buildCompoEmbed(compo) {
           const renderPlayer = (i) => {
             const u = arr[i];
             const buildText = u && u.build ? u.build : roleBuilds[i];
-            return u ? `${color} <@${u.userId}> - *${buildText || label}*` : `${color} *${buildText || label}*`;
+            return u ? `${color} **<@${u.userId}>** - *${buildText || label}*` : `${color} ${buildText || label}: *[ Vacío ]*`;
           };
 
           let roleSlotsAllocated = 0;
@@ -226,7 +228,7 @@ function buildCompoEmbed(compo) {
         });
     }
   } else {
-    for (const { key, emoji, label } of rolesConfig) {
+    for (const { key, emoji, color, label } of rolesConfig) {
       const max = slots[key] || 0;
       if (max === 0) continue;
       const arr = signups[key] || [];
@@ -237,7 +239,7 @@ function buildCompoEmbed(compo) {
         const u = arr[i];
         if (u) filled++;
         const buildText = u && u.build ? u.build : roleBuilds[i];
-        lines.push(`${u ? `✅ **<@${u.userId}>**` : "⬜ *vacío*"}${buildText ? ` · *${buildText}*` : ""}`);
+        lines.push(`${u ? `✅ **<@${u.userId}>**` : `${color} *[ Vacío ]*`}${buildText ? ` · *${buildText}*` : ""}`);
       }
       const singularLabel = label.endsWith('s') ? label.slice(0, -1) : label;
       rosterDesc += `\n**${emoji} ${singularLabel} (${filled}/${max})**\n${lines.join("\n")}\n`;
