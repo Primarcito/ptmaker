@@ -329,6 +329,11 @@ client.once("clientReady", async () => {
         )
       ),
     new SlashCommandBuilder()
+      .setName("pt-repost")
+      .setDescription("Repostea un evento activo en otro canal conservando la lista actual de anotados")
+      .addStringOption(o => o.setName("evento").setDescription("Selecciona el evento que quieres repostear").setRequired(true).setAutocomplete(true))
+      .addChannelOption(o => o.setName("canal").setDescription("El canal donde repostear").setRequired(true).addChannelTypes(ChannelType.GuildText)),
+    new SlashCommandBuilder()
       .setName("pt-lanzar")
       .setDescription("Lanza una composición al canal")
       .addStringOption(o => o.setName("plantilla").setDescription("Nombre de la plantilla").setRequired(true).setAutocomplete(true))
@@ -382,12 +387,24 @@ async function handle(interaction) {
   // ── AUTOCOMPLETE ──────────────────────────────────────────
   if (interaction.isAutocomplete()) {
     const focused = interaction.options.getFocused().toLowerCase();
-    return interaction.respond(
-      Object.keys(templates)
-        .filter(k => k.toLowerCase().includes(focused))
-        .slice(0, 25)
-        .map(k => ({ name: k, value: k }))
-    );
+    
+    if (interaction.commandName === "pt-lanzar") {
+      return interaction.respond(
+        Object.keys(templates)
+          .filter(k => k.toLowerCase().includes(focused))
+          .slice(0, 25)
+          .map(k => ({ name: k, value: k }))
+      );
+    }
+
+    if (interaction.commandName === "pt-repost") {
+      const active = Object.entries(compos)
+        .filter(([id, c]) => c.nombre.toLowerCase().includes(focused))
+        .map(([id, c]) => ({ name: `${c.nombre} (${c.tipo})`.slice(0, 100), value: id }));
+      return interaction.respond(active.slice(0, 25));
+    }
+    
+    return;
   }
 
   // ── SLASH COMMANDS ────────────────────────────────────────
@@ -483,6 +500,74 @@ async function handle(interaction) {
       compos[targetId] = compoData;
       saveCompos();
       return;
+    }
+
+    // /pt-repost
+    if (interaction.commandName === "pt-repost") {
+      const oldId = interaction.options.getString("evento");
+      const compo = compos[oldId];
+      if (!compo) return interaction.reply({ content: "❌ Evento no encontrado o ya cerrado.", ephemeral: true });
+
+      const isCreator = compo.authorId === interaction.user.id;
+      if (!hasAdmin && !isCreator) return interaction.reply({ content: "❌ Sin permiso.", ephemeral: true });
+
+      const targetChannel = interaction.options.getChannel("canal");
+      if (!checkChannel(targetChannel.id)) 
+         return interaction.reply({ content: "❌ Canal no permitido en la configuración.", ephemeral: true });
+
+      await interaction.reply({ content: "⏳ Reposteando el evento...", ephemeral: true });
+
+      try {
+        // Borrar el mensaje / hilo anterior para no dejar duplicados visuales
+        try {
+          const oldCh = client.channels.cache.get(compo.channelId) || await client.channels.fetch(compo.channelId).catch(()=>null);
+          if (oldCh && compo.parentMsgId) {
+            const parentMsg = await oldCh.messages.fetch(compo.parentMsgId).catch(()=>null);
+            if (parentMsg) {
+              if (parentMsg.thread) await parentMsg.thread.setArchived(true).catch(()=>{});
+              await parentMsg.delete().catch(()=>{});
+            }
+          }
+        } catch (e) {}
+
+        const msg = await targetChannel.send({
+          content: `📋 **${compo.authorTag}** publicó **${compo.nombre}**.\n🔗 ¡Anotate en el hilo inferior! 👇\n(⚠️ *Reposteado*)`,
+          embeds: [buildCompoEmbed(compo)],
+        });
+
+        let newTargetId = msg.id;
+        try {
+          const thread = await msg.startThread({
+            name: `[${compo.tipo}] ${compo.nombre}`.slice(0, 100),
+            autoArchiveDuration: 1440
+          });
+          const threadMsg = await thread.send({
+            content: "👇 **Elige tu rol usando estos botones:**",
+            components: buildCompoButtons(compo)
+          });
+          compo.threadMsgId = threadMsg.id;
+          newTargetId = threadMsg.id;
+        } catch (err) {
+          console.error("Error creating thread on repost:", err.message);
+          await msg.edit({
+            content: `📋 **${compo.authorTag}** publicó **${compo.nombre}**. ¡Anotate usando los botones de abajo!\n(⚠️ *Reposteado*)`,
+            components: buildCompoButtons(compo)
+          });
+          compo.threadMsgId = null;
+        }
+
+        compo.parentMsgId = msg.id;
+        compo.channelId = targetChannel.id;
+
+        compos[newTargetId] = compo;
+        if (newTargetId !== oldId) delete compos[oldId];
+        saveCompos();
+
+        return interaction.editReply({ content: `✅ Evento reposteado con éxito en <#${targetChannel.id}>.` });
+      } catch (err) {
+        console.error("Error reposteando:", err);
+        return interaction.editReply({ content: "❌ Hubo un error al repostear." });
+      }
     }
 
     // Helper de UI para sincronizar el cartel
